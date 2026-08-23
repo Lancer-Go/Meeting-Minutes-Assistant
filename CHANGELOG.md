@@ -25,6 +25,7 @@
 ## [0.2.0] - 2026-08-24
 
 ### 文档
+- 新增 CHANGELOG.md，建立每次提交登记变更的规范（c72a725）
 - 确认关键决策（云端 SaaS 优先 / 云 ASR / 中文为主 / ≤2h / 利润 0），三文档更新至 v0.2（6d15d7c）
 - 收敛为 mission / roadmap / tech-stack 三文件，roadmap 重写为详细实现路线图（afd32d6）
 - 按 SDD 规范拆分文档目录（mission / roadmap / tech-stack 等 12 个文件）（f8a6f4f）
