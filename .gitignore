@@ -31,3 +31,9 @@ tools/
 *.wav
 *.mp3
 *.m4a
+
+# 服务数据 (M1)
+data/
+.pytest_cache/
+.coverage
+htmlcov/

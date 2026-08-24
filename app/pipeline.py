@@ -1,0 +1,128 @@
+"""M1 · pipeline 模块 — 全链路编排与成本估算。
+
+「音频提取 → 转写 → 纪要 → 渲染」端到端串联，记录耗时/成本/字符数。
+云端密钥缺失时自动降级到离线兜底（whisper / extractive），保证链路可跑通。
+"""
+from __future__ import annotations
+
+import json
+import time
+from datetime import datetime
+from pathlib import Path
+
+from app import audio, config
+from app.asr import get_asr_provider, has_cloud_credentials as asr_has_creds
+from app.render import build_minutes_md
+from app.summary import get_llm_provider, has_cloud_credentials as llm_has_creds
+
+# 估算价格（列表价，仅作量级估算，实际以账单为准）
+ASR_PRICE_RMB_PER_MIN = {
+    "whisper": 0.0,        # 本地免费
+    "aliyun": 2.5 / 60,    # 阿里云录音文件识别 ~¥2.5/h → 每分钟
+    "tencent": 1.75 / 60,  # 腾讯云 16k_zh ~¥1.75/h → 每分钟
+    "iflytek": 2.0 / 60,   # 讯飞 ~¥2.0/h → 每分钟
+}
+LLM_PRICE_RMB_PER_1K_TOKENS = {
+    "deepseek": 0.002,     # deepseek-chat 输入 ~¥2/百万 token（估）
+    "qwen": 0.002,         # qwen-plus 估
+    "extractive": 0.0,
+}
+
+
+def estimate_cost(asr_name: str, audio_minutes: float,
+                  llm_name: str, transcript_chars: int) -> tuple[float, float]:
+    """估算 ASR 与 LLM 成本（量级，实际以账单为准）。返回 (asr_cost, llm_cost)。"""
+    asr_cost = ASR_PRICE_RMB_PER_MIN.get(asr_name, 0.0) * audio_minutes
+    # 中文约 1 字符 ≈ 1 token（估算上限）
+    tokens = transcript_chars
+    llm_cost = LLM_PRICE_RMB_PER_1K_TOKENS.get(llm_name, 0.0) * tokens / 1000
+    return asr_cost, llm_cost
+
+
+def resolve_asr_name(requested: str) -> str:
+    """云端 ASR 无密钥时降级到本地 whisper。"""
+    if requested != "whisper" and not asr_has_creds(requested):
+        return config.ASR_FALLBACK
+    return requested
+
+
+def resolve_llm_name(requested: str) -> str:
+    """云端 LLM 无密钥时降级到本地抽取式基线。"""
+    if requested != "extractive" and not llm_has_creds(requested):
+        return config.LLM_FALLBACK
+    return requested
+
+
+def run(input_path: Path, out_dir: Path, asr_name: str, llm_name: str,
+        title: str = "会议纪要", progress_callback=None) -> dict:
+    """端到端跑通全链路，产物写入 out_dir，返回 metrics。
+
+    progress_callback(percent: int, message: str) 在各阶段回调，用于进度展示。
+    """
+    asr_name = resolve_asr_name(asr_name)
+    llm_name = resolve_llm_name(llm_name)
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    def _report(pct: int, msg: str) -> None:
+        if progress_callback:
+            progress_callback(pct, msg)
+
+    metrics = {"input": str(input_path), "started_at": datetime.now().isoformat(timespec="seconds")}
+
+    # 1) 音频提取
+    _report(5, "提取音频")
+    t0 = time.time()
+    wav = audio.extract_audio(input_path, out_dir / "audio.wav")
+    metrics["audio_elapsed_s"] = round(time.time() - t0, 2)
+    audio_minutes = audio.get_duration(wav) / 60
+
+    # 2) 转写
+    _report(20, "语音转写")
+    asr_kwargs = {"model": config.WHISPER_MODEL} if asr_name == "whisper" else {}
+    asr_provider = get_asr_provider(asr_name, **asr_kwargs)
+    t0 = time.time()
+    transcript = asr_provider.transcribe(wav)
+    metrics["asr_elapsed_s"] = round(time.time() - t0, 2)
+
+    (out_dir / "transcript.json").write_text(
+        json.dumps(transcript.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+    (out_dir / "transcript.txt").write_text(transcript.to_timestamped_text(), encoding="utf-8")
+
+    # 3) 纪要
+    _report(80, "生成纪要")
+    llm_provider = get_llm_provider(llm_name)
+    t0 = time.time()
+    body_md = llm_provider.summarize(transcript)
+    llm_elapsed = time.time() - t0
+
+    # 4) 渲染
+    meta = {
+        "title": title,
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "duration_min": audio_minutes,
+        "asr": f"{transcript.provider} / {transcript.model}",
+    }
+    minutes_md = build_minutes_md(meta, body_md)
+    (out_dir / "minutes.md").write_text(minutes_md, encoding="utf-8")
+
+    # 5) 指标汇总
+    asr_cost, llm_cost = estimate_cost(asr_name, audio_minutes, llm_name, transcript.char_count)
+    metrics.update({
+        "audio_duration_min": round(audio_minutes, 2),
+        "asr": {"provider": transcript.provider, "model": transcript.model,
+                "elapsed_s": metrics["asr_elapsed_s"], "cost_rmb": round(asr_cost, 4)},
+        "llm": {"provider": llm_name, "model": getattr(llm_provider, "model", ""),
+                "elapsed_s": round(llm_elapsed, 2), "cost_rmb": round(llm_cost, 4)},
+        "transcript_chars": transcript.char_count,
+        "total_elapsed_s": round(metrics["audio_elapsed_s"] + metrics["asr_elapsed_s"] + llm_elapsed, 2),
+        "total_cost_rmb": round(asr_cost + llm_cost, 4),
+        "ratio_elapsed_to_duration": round(
+            (metrics["audio_elapsed_s"] + metrics["asr_elapsed_s"] + llm_elapsed)
+            / max(audio_minutes * 60, 1e-6), 3),
+        "finished_at": datetime.now().isoformat(timespec="seconds"),
+    })
+    (out_dir / "metrics.json").write_text(
+        json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
+    _report(100, "完成")
+    return metrics

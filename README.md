@@ -2,52 +2,82 @@
 
 将会议录音/录像自动转写为文字，并生成结构化 Markdown 会议纪要。
 
-> 当前进度：**M0 · 概念验证 (PoC)** —— 打通「音频 → 转写 → 纪要」最小闭环，用实测数据锁定云 ASR 厂商与 LLM 选型。详见 `specs/` 与 `docs/roadmap.md`。
+> 当前进度：**M1 · MVP（可用闭环 · 云 API）** —— FastAPI 服务 + 异步全链路，无技术背景用户可自助「上传 → 得到纪要」。
+> 选型已锁定（M0 实测）：ASR 腾讯云 16k_zh / LLM DeepSeek-chat。详见 `specs/` 与 `docs/roadmap.md`。
 
-## 快速开始
+## 快速开始（服务模式）
 
 ```bash
 # 1. 环境（Python 3.11）
 python -m venv venv
 ./venv/Scripts/python.exe -m pip install -r requirements.txt
 
-# 2.（可选）生成一段合成中文会议样例（需联网；真实音频请直接放入 samples/）
-./venv/Scripts/python.exe make_sample.py samples/meeting-001.mp3
+# 2. 配置密钥：复制 .env.example 为 .env，填入腾讯云 / DeepSeek 密钥
+#    （不填密钥也能跑：自动降级为本地 whisper 转写 + 抽取式纪要）
 
-# 3. 一键跑通端到端（离线：本地 whisper + 抽取式纪要，无需任何密钥）
-./venv/Scripts/python.exe pipeline.py samples/meeting-001.mp3
+# 3. 启动服务
+./venv/Scripts/python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+
+# 4. 浏览器打开 http://127.0.0.1:8000/ （上传页 + 进度条 + 结果下载）
 ```
 
-## 任务组（M0）
-
-| 任务组 | 脚本 | 说明 |
-| --- | --- | --- |
-| TG-0 环境 | `requirements.txt` + `venv` | Python 3.11 + FFmpeg（缺系统 FFmpeg 时用 `static-ffmpeg` 兜底） |
-| TG-1 样例 | `make_sample.py` → `samples/` | 合成占位样例；真实音频由用户替换 |
-| TG-2 音频 | `audio.py` | FFmpeg 抽音轨，标准化 16kHz 单声道 WAV |
-| TG-3 转写 | `asr.py` | `ASRProvider` 抽象 + 本地 whisper / 阿里云 / 腾讯云 / 讯飞 |
-| TG-4 纪要 | `summarize.py` | `LLMProvider` 抽象 + DeepSeek / Qwen / 本地抽取式基线 |
-| TG-5 串联 | `pipeline.py` | 一键串联，记录耗时/成本/转写字符数 |
-| TG-6 评测 | `eval_cer.py` + 《选型决策记录》 | CER 计算与选型结论 |
-
-## 使用云端 ASR / LLM
-
-复制 `.env.example` 为 `.env`，填入对应密钥，然后：
+### Docker Compose 一键启动（需本机 Docker）
 
 ```bash
-./venv/Scripts/python.exe pipeline.py samples/meeting-001.mp3 --asr aliyun --llm deepseek
+docker compose up --build
 ```
 
-不填密钥时，`--asr whisper --llm extractive` 可离线跑通全链路（仅用于链路验证，质量非生产级）。
+## REST API
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | `/api/tasks` | 上传文件（multipart `file`），创建任务并异步执行 |
+| GET | `/api/tasks` | 任务列表 |
+| GET | `/api/tasks/{id}` | 任务状态与进度 |
+| GET | `/api/tasks/{id}/transcript` | 转写文本下载 |
+| GET | `/api/tasks/{id}/minute` | 纪要 Markdown 下载 |
+| GET | `/health` | 健康检查 |
+
+- 支持格式：MP4 / MKV / WAV / MP3 / M4A，单场 ≤ 2 小时。
+- 状态机：`pending → running → succeeded / failed`；进度 0–100。
+- 云端 ASR/LLM 密钥缺失时自动降级（`whisper` / `extractive`），保证链路可跑通。
+
+## 任务组（M1）
+
+| 任务组 | 模块 | 说明 |
+| --- | --- | --- |
+| TG-0 骨架 | `app/config.py` + `requirements.txt` | 配置管理 + 依赖锁定 |
+| TG-1 模块化重构 | `app/audio` · `app/asr` · `app/summary` · `app/render` | 四模块，去 M0 脚本式 |
+| TG-2 上传 | `app/ingestion.py` | 格式白名单 / 大小 / 时长校验 |
+| TG-3 任务模型 | `app/db.py` | SQLite Task + 状态机 |
+| TG-4 队列 | `app/worker.py` + FastAPI BackgroundTasks | 异步全链路 |
+| TG-5 导出 | `app/main.py` | Markdown 导出与下载接口 |
+| TG-6 前端 | `static/index.html` | 上传页 + 进度 + 下载 |
+| TG-7 容错 | `app/worker.py` + `app/main.py` | 重试 + 结构化日志 |
+
+## 测试
+
+```bash
+./venv/Scripts/python.exe -m pytest tests/ --cov=app
+```
+
+## 离线 CLI（M0 遗留，链路验证用）
+
+```bash
+./venv/Scripts/python.exe pipeline.py samples/meeting-001.mp3 --asr whisper --llm extractive
+```
 
 ## 目录结构
 
 ```
-audio.py / asr.py / summarize.py / pipeline.py / eval_cer.py   # 核心脚本
-config.py        # 集中配置（读 .env）
-make_sample.py   # 合成样例音频
+app/             # M1 服务包（config / audio / asr / summary / render / pipeline / ingestion / db / worker / main）
+static/          # 极简前端（index.html）
+tests/           # 单元与集成测试（覆盖率 ≥ 70%）
+Dockerfile / docker-compose.yml   # 容器化交付
+audio.py / asr.py / summarize.py / pipeline.py / eval_cer.py / make_sample.py  # M0 脚本（离线 CLI）
+config.py        # M0 集中配置（根）；服务配置见 app/config.py
 samples/         # 会议音频（gitignore，需自备真实数据）
-out/             # 运行产物（transcript.json / minutes.md / metrics.json）
+data/            # 服务数据：上传文件 + 任务产物 + SQLite（gitignore）
 specs/           # 阶段执行文档（plan / requirements / validation）
 docs/            # mission / roadmap / tech-stack 源文档
 ```
