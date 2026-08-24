@@ -9,7 +9,9 @@ static_ffmpeg==3.0
 
 # ---- 语音转写 (ASR) ----
 faster-whisper==1.2.1           # 本地离线转写（默认，无需密钥）
-dashscope==1.27.1               # 阿里云 Paraformer（可选）
+aliyun-python-sdk-core==2.16.0  # 阿里云 NLS 录音文件识别（可选）
+oss2==2.19.1                    # 阿里云 OSS 上传（NLS 录音文件识别需音频 URL）
+dashscope==1.27.1               # 阿里云 DashScope（备选）
 tencentcloud-sdk-python-asr==3.1.160  # 腾讯云录音文件识别（可选）
 websocket-client==1.9.0         # 讯飞（占位，未接入 LFASR）
 

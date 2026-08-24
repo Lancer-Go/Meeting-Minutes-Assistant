@@ -100,28 +100,85 @@ class WhisperLocalASR(ASRProvider):
 
 
 # ------------------------------------------------------------------ 云 ASR
-class AliyunDashScopeASR(ASRProvider):
-    """阿里云 DashScope Paraformer 录音文件识别。
+class AliyunNLSRealtimeASR(ASRProvider):
+    """阿里云智能语音交互（NLS）实时语音转写（无需 OSS）。
 
-    说明（⚠️ 未在本环境实测，需密钥 + 可访问的音频 URL）：
-    录音文件识别需要音频位于可公网访问的 URL（先传到 OSS）。此处走
-    `Transcription.async_call(file_urls=[...])` 提交后轮询结果。
+    走 websocket 流式识别本地音频（NlsSpeechTranscriber），返回带时间戳的分句。
+    需要 AppKey + AccessKeyId + AccessKeySecret（用于换取 Token）。
+    ⚠️ 实时接口按实时节奏处理，长音频耗时接近音频时长；批量场景建议「录音文件识别」
+    （需 OSS 桶，见 requirements 备注）。
     """
 
     name = "aliyun"
 
-    def __init__(self, api_key: str = "", model: str = "paraformer-v2"):
+    def __init__(self, app_key: str = "", access_key_id: str = "",
+                 access_key_secret: str = "", region: str = "cn-shanghai"):
         import config
-        self.api_key = api_key or config.DASHSCOPE_API_KEY
-        self.model = model
-        if not self.api_key:
-            raise RuntimeError("缺少 DASHSCOPE_API_KEY（阿里云 DashScope）。请在 .env 配置后重试。")
+        self.app_key = app_key or config.ALIYUN_APP_KEY
+        self.ak_id = access_key_id or config.ALIYUN_ACCESS_KEY_ID
+        self.ak_secret = access_key_secret or config.ALIYUN_ACCESS_KEY_SECRET
+        self.region = region
+        self.model = "nls-realtime"
+        if not (self.app_key and self.ak_id and self.ak_secret):
+            raise RuntimeError(
+                "缺少 ALIYUN_APP_KEY / ALIYUN_ACCESS_KEY_ID / ALIYUN_ACCESS_KEY_SECRET。"
+                "（阿里云智能语音交互的 AppKey 是 NLS 体系，需配套 AccessKey。）"
+            )
 
     def transcribe(self, wav: Path) -> Transcript:
-        raise NotImplementedError(
-            "阿里云录音文件识别需先将音频上传至 OSS 并传入 file_urls；"
-            "接入步骤见 docs/decisions/选型决策记录.md 或联系维护者补齐 OSS 上传流程。"
-        )
+        import json as _json
+        import time as _t
+        import wave as _wave
+        from nls.token import getToken
+        from nls.speech_transcriber import NlsSpeechTranscriber
+
+        token = getToken(self.ak_id, self.ak_secret)
+        segs: list[Segment] = []
+        begin_map: dict[int, float] = {}
+        errors: list[str] = []
+
+        def on_sentence_begin(message, *args):
+            m = _json.loads(message)
+            p = m.get("payload", {})
+            begin_map[p.get("index", 0)] = float(p.get("time", 0))
+
+        def on_sentence_end(message, *args):
+            m = _json.loads(message)
+            p = m.get("payload", {})
+            text = (p.get("result") or "").strip()
+            if text:
+                segs.append(Segment(begin_map.get(p.get("index", 0), 0.0) / 1000.0,
+                                    float(p.get("time", 0)) / 1000.0, text))
+
+        def on_error(message, *args):
+            errors.append(message)
+
+        sr = NlsSpeechTranscriber(token=token, appkey=self.app_key,
+                                  on_sentence_begin=on_sentence_begin,
+                                  on_sentence_end=on_sentence_end,
+                                  on_error=on_error)
+        t0 = _t.time()
+        sr.start(aformat="pcm", sample_rate=16000, ch=1,
+                 enable_punctuation_prediction=True,
+                 enable_intermediate_result=False)
+
+        with _wave.open(str(wav), "rb") as w:
+            if w.getframerate() != 16000 or w.getnchannels() != 1:
+                raise RuntimeError("阿里云实时识别需 16kHz 单声道 WAV")
+            while True:
+                data = w.readframes(320)  # 20ms 一帧
+                if not data:
+                    break
+                sr.send_audio(data)
+
+        duration_s = segs[-1].end if segs else 0.0
+        sr.stop(timeout=max(int(duration_s) + 60, 30))
+        if errors:
+            raise RuntimeError(f"阿里云转写错误: {errors[-1]}")
+        text = "".join(s.text for s in segs)
+        return Transcript(segments=segs, text=text, provider=self.name,
+                          model=self.model, elapsed_s=_t.time() - t0,
+                          cost_rmb=0.0)  # 成本估算见 pipeline.estimate_cost
 
 
 class TencentASR(ASRProvider):
@@ -147,44 +204,50 @@ class TencentASR(ASRProvider):
         from tencentcloud.asr.v20190614 import asr_client, models
         from tencentcloud.common import credential
         from tencentcloud.common.profile.client_profile import ClientProfile
-        from tencentcloud.common.profile.http_profile import HttpProfile
+
+        raw = Path(wav).read_bytes()
+        if len(raw) > 3_750_000:  # base64 后约 5MB（接口上限）
+            raise RuntimeError(
+                f"腾讯云 SourceType=1（音频数据）上限约 2 分钟音频（base64 ≤5MB），"
+                f"当前 {len(raw) / 1e6:.1f}MB 超限。请用短切片，或改用 SourceType=0（公网 URL）。"
+            )
 
         cred = credential.Credential(self.secret_id, self.secret_key)
-        hp = HttpProfile()
         cp = ClientProfile()
-        cp.httpProfile = hp
         client = asr_client.AsrClient(cred, "ap-guangzhou", cp)
 
-        data = base64.b64encode(Path(wav).read_bytes()).decode()
         req = models.CreateRecTaskRequest()
         req.EngineModelType = self.engine
         req.ChannelNum = 1
-        req.ResTextFormat = 3  # 含时间戳
-        req.SourceType = 1     # 音频数据
-        req.Data = data
+        req.ResTextFormat = 3     # 含标点 + 分句时间戳（ResultDetail.FinalSentence/StartMs/EndMs）
+        req.SourceType = 1        # 音频数据（base64）
+        req.Data = base64.b64encode(raw).decode()
+        req.DataLen = len(raw)
 
         t0 = _t.time()
         resp = client.CreateRecTask(req)
         task_id = resp.Data.TaskId
 
         deadline = t0 + 600
+        sresp = None
         while _t.time() < deadline:
             st = models.DescribeTaskStatusRequest()
             st.TaskId = task_id
             sresp = client.DescribeTaskStatus(st)
-            status = sresp.Data.StatusStr
-            if status in ("success", "2"):
+            status = sresp.Data.Status  # 0 等待 / 1 执行中 / 2 成功 / 3 失败
+            if status == 2:
                 break
-            if status in ("failed", "3"):
+            if status == 3:
                 raise RuntimeError(f"腾讯云转写失败: {sresp.Data.ErrorMsg}")
             _t.sleep(2)
         else:
-            raise TimeoutError("腾讯云转写超时")
+            raise TimeoutError("腾讯云转写超时（>10min）")
 
         segs = []
         for r in sresp.Data.ResultDetail or []:
-            segs.append(Segment(float(r.StartMs) / 1000, float(r.EndMs) / 1000, r.FinalSentence or ""))
-        text = "".join(s.text for s in segs)
+            segs.append(Segment(float(r.StartMs) / 1000.0, float(r.EndMs) / 1000.0,
+                                r.FinalSentence or ""))
+        text = sresp.Data.Result or "".join(s.text for s in segs)
         return Transcript(segments=segs, text=text, provider=self.name,
                           model=self.engine, elapsed_s=_t.time() - t0,
                           cost_rmb=0.0)  # 成本估算见 pipeline.estimate_cost
@@ -218,7 +281,7 @@ class IFlytekASR(ASRProvider):
 
 PROVIDERS = {
     "whisper": WhisperLocalASR,
-    "aliyun": AliyunDashScopeASR,
+    "aliyun": AliyunNLSRealtimeASR,
     "tencent": TencentASR,
     "iflytek": IFlytekASR,
 }

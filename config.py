@@ -18,7 +18,13 @@ SAMPLES_DIR = ROOT / "samples"
 OUT_DIR = ROOT / "out"
 
 # ---- 云 ASR 密钥 ----
-# 阿里云 DashScope（Paraformer 录音文件识别）
+# 阿里云智能语音交互（NLS）录音文件识别：AppKey + AccessKey + OSS 桶
+ALIYUN_APP_KEY = os.getenv("ALIYUN_APP_KEY", "")
+ALIYUN_ACCESS_KEY_ID = os.getenv("ALIYUN_ACCESS_KEY_ID", "")
+ALIYUN_ACCESS_KEY_SECRET = os.getenv("ALIYUN_ACCESS_KEY_SECRET", "")
+ALIYUN_OSS_BUCKET = os.getenv("ALIYUN_OSS_BUCKET", "")
+ALIYUN_OSS_ENDPOINT = os.getenv("ALIYUN_OSS_ENDPOINT", "oss-cn-shanghai.aliyuncs.com")
+# 阿里云 DashScope（备选，需 sk- 开头的 DashScope API Key）
 DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY", "")
 # 腾讯云（录音文件识别）
 TENCENT_SECRET_ID = os.getenv("TENCENT_SECRET_ID", "")
