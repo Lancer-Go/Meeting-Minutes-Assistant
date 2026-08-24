@@ -4,7 +4,7 @@
 | --- | --- |
 | 阶段 | M0 · 概念验证 (PoC) |
 | 分支 | feat/m0-poc |
-| 关联文档 | [roadmap.md](../docs/roadmap.md) · [mission.md](../docs/mission.md) · [tech-stack.md](../docs/tech-stack.md) |
+| 关联文档 | [roadmap.md](../../docs/roadmap.md) · [mission.md](../../docs/mission.md) · [tech-stack.md](../../docs/tech-stack.md) |
 
 > 本文定义 M0 的**可交付物、验收标准与退出条件**，用于判断 M0 是否完成、能否进入 M1。
 

@@ -4,7 +4,7 @@
 | --- | --- |
 | 阶段 | M0 · 概念验证 (PoC) |
 | 分支 | feat/m0-poc |
-| 关联文档 | [roadmap.md](../docs/roadmap.md) · [mission.md](../docs/mission.md) · [tech-stack.md](../docs/tech-stack.md) |
+| 关联文档 | [roadmap.md](../../docs/roadmap.md) · [mission.md](../../docs/mission.md) · [tech-stack.md](../../docs/tech-stack.md) |
 
 > 本文把 roadmap.md 中 M0 的 7 步工作顺序组织为可执行的**任务组**。每个任务组含目标、任务项、产出与验收；任务组之间有强依赖，必须串行推进（前一组的验收是后一组的输入）。
 

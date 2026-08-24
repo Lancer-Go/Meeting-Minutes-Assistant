@@ -4,7 +4,7 @@
 | --- | --- |
 | 阶段 | M0 · 概念验证 (PoC) |
 | 分支 | feat/m0-poc |
-| 关联文档 | [roadmap.md](../docs/roadmap.md) · [mission.md](../docs/mission.md) · [tech-stack.md](../docs/tech-stack.md) |
+| 关联文档 | [roadmap.md](../../docs/roadmap.md) · [mission.md](../../docs/mission.md) · [tech-stack.md](../../docs/tech-stack.md) |
 
 > 本文说明 M0 的**范围、已定决策与上下文**，作为 plan.md 的依据与 validation.md 的对照。
 

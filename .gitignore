@@ -22,3 +22,12 @@ Thumbs.db
 # 本地文件
 *.log
 *_note.md
+
+# 样例与运行产物
+samples/*
+!samples/.gitkeep
+out/
+tools/
+*.wav
+*.mp3
+*.m4a
