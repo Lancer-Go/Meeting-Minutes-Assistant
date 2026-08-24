@@ -32,6 +32,9 @@
 - 阶段执行文档目录迁移至 specs/ 下（3e1f442）
 - 用真实会议（80min）完成三家 ASR 对比与 DeepSeek 端到端纪要，锁定选型（ASR 腾讯云 16k_zh / LLM DeepSeek-chat），回填《选型决策记录》（b3499f0）
 
+### 文档
+- tech-stack 更新至 v0.3，回填 M0 实测锁定厂商（ASR 腾讯云 16k_zh / LLM DeepSeek-chat），关联《选型决策记录》（a2ada36）
+
 ## [0.2.0] - 2026-08-24
 
 ### 文档
