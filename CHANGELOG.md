@@ -24,6 +24,11 @@
 
 ### 新增
 - 新增 M0 概念验证任务准备（plan / requirements / validation 三文档）（605e4a3）
+- 实现 M0 任务组 TG-0~TG-6：环境脚手架、音频提取、语音转写、纪要生成、端到端流水线、CER 评测（audio / asr / summarize / pipeline / eval_cer / config / make_sample + requirements.txt）（3e1f442）
+- 新增《选型决策记录》初稿（含本地离线实测 CER / 耗时 / 成本）（3e1f442）
+
+### 变更
+- 阶段执行文档目录迁移至 specs/ 下（3e1f442）
 
 ## [0.2.0] - 2026-08-24
 
