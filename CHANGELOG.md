@@ -23,6 +23,8 @@
 -->
 
 ### 新增
+- 实现 M1 MVP：FastAPI 服务 + 异步全链路（app/ 包 TG-0~TG-7：上传校验/音频提取/腾讯云切片转写/DeepSeek 纪要/Markdown 导出/任务状态机/极简前端/重试与结构化日志），含 Docker Compose 一键启动与单测覆盖率 78%（9b99e1e）
+- 新增 M1 MVP 任务准备（plan / requirements / validation 三文档）（042548b）
 - 新增 M0 概念验证任务准备（plan / requirements / validation 三文档）（605e4a3）
 - 实现 M0 任务组 TG-0~TG-6：环境脚手架、音频提取、语音转写、纪要生成、端到端流水线、CER 评测（audio / asr / summarize / pipeline / eval_cer / config / make_sample + requirements.txt）（3e1f442）
 - 新增《选型决策记录》初稿（含本地离线实测 CER / 耗时 / 成本）（3e1f442）

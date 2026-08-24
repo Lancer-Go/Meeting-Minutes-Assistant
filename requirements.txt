@@ -1,4 +1,4 @@
-# M0 PoC 依赖（Python 3.11，锁定版本）
+# Meeting Minutes Assistant 依赖（Python 3.11，锁定版本）
 
 # ---- 通用 ----
 python-dotenv==1.2.3
@@ -8,11 +8,12 @@ python-dotenv==1.2.3
 static_ffmpeg==3.0
 
 # ---- 语音转写 (ASR) ----
-faster-whisper==1.2.1           # 本地离线转写（默认，无需密钥）
+faster-whisper==1.2.1           # 本地离线转写（离线兜底，无需密钥）
+alibabacloud-nls-python-sdk==1.0.2  # 阿里云 NLS 实时语音转写（可选）
 aliyun-python-sdk-core==2.16.0  # 阿里云 NLS 录音文件识别（可选）
 oss2==2.19.1                    # 阿里云 OSS 上传（NLS 录音文件识别需音频 URL）
 dashscope==1.27.1               # 阿里云 DashScope（备选）
-tencentcloud-sdk-python-asr==3.1.160  # 腾讯云录音文件识别（可选）
+tencentcloud-sdk-python-asr==3.1.160  # 腾讯云录音文件识别（主选）
 websocket-client==1.9.0         # 讯飞（占位，未接入 LFASR）
 
 # ---- 纪要生成 (LLM) ----
@@ -20,3 +21,12 @@ openai==3.3.1                   # DeepSeek / Qwen 的 OpenAI 兼容接口
 
 # ---- 样例数据生成 ----
 edge-tts==7.2.8                 # 合成中文会议样例（真实音频由用户替换）
+
+# ---- 服务 (M1) ----
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+python-multipart==0.0.32
+
+# ---- 测试 (M1) ----
+pytest==9.1.1
+httpx==0.28.1
