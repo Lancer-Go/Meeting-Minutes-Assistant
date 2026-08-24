@@ -36,6 +36,7 @@
 - 用真实会议（80min）完成三家 ASR 对比与 DeepSeek 端到端纪要，锁定选型（ASR 腾讯云 16k_zh / LLM DeepSeek-chat），回填《选型决策记录》（b3499f0）
 
 ### 文档
+- tech-stack 更新至 v0.4，回填 M1 实际选型（FastAPI / BackgroundTasks / SQLite+本地FS / Docker Compose 落地；B4 数据模型与 REST API 对齐 M1 实现）；roadmap「下一步」由启动 M0 更正为推进 M2（0c13169）
 - tech-stack 更新至 v0.3，回填 M0 实测锁定厂商（ASR 腾讯云 16k_zh / LLM DeepSeek-chat），关联《选型决策记录》（a2ada36）
 
 ## [0.2.0] - 2026-08-24
