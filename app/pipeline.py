@@ -23,7 +23,7 @@ ASR_PRICE_RMB_PER_MIN = {
     "iflytek": 2.0 / 60,   # 讯飞 ~¥2.0/h → 每分钟
 }
 LLM_PRICE_RMB_PER_1K_TOKENS = {
-    "deepseek": 0.002,     # deepseek-chat 输入 ~¥2/百万 token（估）
+    "deepseek": 0.002,     # deepseek-v4-pro 输入 ~¥2/百万 token（估）
     "qwen": 0.002,         # qwen-plus 估
     "extractive": 0.0,
 }
@@ -77,12 +77,20 @@ def run(input_path: Path, out_dir: Path, asr_name: str, llm_name: str,
     metrics["audio_elapsed_s"] = round(time.time() - t0, 2)
     audio_minutes = audio.get_duration(wav) / 60
 
-    # 2) 转写
+    # 2) 转写（按切片推进进度：腾讯云逐段识别，本地 whisper 按已处理时长）
     _report(20, "语音转写")
     asr_kwargs = {"model": config.WHISPER_MODEL} if asr_name == "whisper" else {}
     asr_provider = get_asr_provider(asr_name, **asr_kwargs)
+
+    def _asr_progress(done: int, total: int) -> None:
+        pct = 20 + int(60 * done / max(total, 1))
+        if asr_name == "tencent":
+            _report(pct, f"语音转写：第 {done}/{total} 段已完成")
+        else:
+            _report(pct, f"语音转写：已处理 {done}/{total} 秒")
+
     t0 = time.time()
-    transcript = asr_provider.transcribe(wav)
+    transcript = asr_provider.transcribe(wav, progress_callback=_asr_progress)
     metrics["asr_elapsed_s"] = round(time.time() - t0, 2)
 
     (out_dir / "transcript.json").write_text(

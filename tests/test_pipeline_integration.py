@@ -11,7 +11,7 @@ class FakeASR:
     name = "whisper"
     model = "fake"
 
-    def transcribe(self, wav):
+    def transcribe(self, wav, progress_callback=None):
         segs = [Segment(0.0, 1.0, "测试内容")]
         return Transcript(segments=segs, text="测试内容", provider=self.name,
                           model=self.model, elapsed_s=0.1)

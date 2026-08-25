@@ -2,7 +2,7 @@
 
 | 文档类型 | 技术栈与技术设计 |
 | --- | --- |
-| 版本 / 状态 | v0.4（M1 MVP 已落地：FastAPI 服务 + 异步全链路）✅ |
+| 版本 / 状态 | v0.5（M1 MVP 已落地；LLM 主方案升级 DeepSeek-V4 Pro + 转写切片进度）✅ |
 | 关联文档 | [mission](mission.md) · [roadmap](roadmap.md) · [选型决策记录](decisions/选型决策记录.md) |
 
 > 说明：本文汇总技术选型（Part A）与技术设计（Part B：需求、架构、方案、数据、测试、部署）。标记 🔶【建议】为倾向方案，✅【已定】为已决项。关键决策（云端 SaaS 优先 / 走云 API / 中文为主 / ≤ 2 小时 / 利润 0 性价比优先）见 [mission.md §8](mission.md)，具体厂商已由 M0 实测锁定，见 [decisions/选型决策记录.md](decisions/选型决策记录.md)。
@@ -58,7 +58,7 @@
 
 | 方案 | 特点 | 建议 |
 | --- | --- | --- |
-| **DeepSeek-V3（deepseek-chat）** | 中文强、性价比高；单场成本 ¥0.045（M0 实测） | ✅ 已锁定 |
+| **DeepSeek-V4 Pro（deepseek-v4-pro）** | 中文强、Agent 能力增强、1M 上下文；性价比高（M0 实测 V3，2026-08-25 升级 V4 Pro） | ✅ 已锁定 |
 | Qwen（通义千问） | 中文好、性价比高 | 🔶 备选（待密钥，未测） |
 | GLM / Kimi | 国产、长文本友好 | 候选 |
 | GPT-4o / Claude | 通用能力强、成本较高 | 候选（对标外企场景） |
@@ -105,7 +105,7 @@
 | 决策点 | 已定方向 | 锁定结论 |
 | --- | --- | --- |
 | ASR 主方案 | ✅ 云 API（接受数据出域） | ✅ **腾讯云 16k_zh**（中英混用最优、批量录音文件识别）；备选阿里云 NLS；本地兜底 faster-whisper |
-| LLM 主方案 | ✅ 性价比高（利润 0） | ✅ **DeepSeek-V3（deepseek-chat）**（纪要质量优秀、单场 ¥0.045）；备选 Qwen（待密钥） |
+| LLM 主方案 | ✅ 性价比高（利润 0） | ✅ **DeepSeek-V4 Pro（deepseek-v4-pro）**（纪要质量更优，由 V3 升级）；备选 Qwen（待密钥） |
 | 部署形态 | ✅ 云端 SaaS 优先 | 本地 Docker Compose 已落地（M1）；云端 K8s / 云托管留 M3 |
 
 ---
@@ -188,7 +188,7 @@ flowchart TB
 | **audio** | 视频抽音轨、采样率/声道归一化、静音检测 | FFmpeg / pydub |
 | **asr** | 语音转文本、说话人分离、时间戳 | 腾讯云 16k_zh（备选阿里云 NLS） |
 | **nlp** | 文本清洗、分段、角色识别、关键词 | spaCy / 规则 + LLM |
-| **summary** | LLM 纪要生成、模板化 | DeepSeek-chat（备选 Qwen） |
+| **summary** | LLM 纪要生成、模板化 | DeepSeek-V4 Pro（deepseek-v4-pro）（备选 Qwen） |
 | **extractor** | 决议/行动项/负责人/截止时间抽取 | LLM Function-Call / JSON Schema |
 | **render** | 纪要渲染为 Markdown | Markdown / Jinja2（Pandoc 后期） |
 | **orchestrator** | 任务状态机、队列调度、重试 | FastAPI BackgroundTasks（M1）/ Celery（M3） |
@@ -211,7 +211,7 @@ ffmpeg -i input.mp4 -vn -ac 1 -ar 16000 -f wav output.wav
 
 统一 16kHz 单声道；可选静音检测、降噪、AGC。
 
-**③ 语音转文字（ASR）**：抽象 `ASRProvider` 接口，首期接 **腾讯云 16k_zh**（备选阿里云 NLS，本地兜底 faster-whisper）；说话人分离优先用云 ASR 内置能力，pyannote / whisperx 作兜底。
+**③ 语音转文字（ASR）**：抽象 `ASRProvider` 接口，首期接 **腾讯云 16k_zh**（备选阿里云 NLS，本地兜底 faster-whisper）；说话人分离优先用云 ASR 内置能力，pyannote / whisperx 作兜底。长音频按切片逐段识别，`transcribe` 支持 `progress_callback(done, total)` 回调，向任务状态推送「第 x/N 段已完成」切片级进度（本地 whisper 按已处理时长回调）。
 
 **④ 文本预处理与角色标注**：分句、去重、合并碎句；标记说话人；猜测角色。
 
@@ -232,7 +232,7 @@ ffmpeg -i input.mp4 -vn -ac 1 -ar 16000 -f wav output.wav
 
 | 实体 | 关键字段 | 状态 |
 | --- | --- | --- |
-| Task | id, source_file, stored_path, status, progress, error, audio_duration_min, transcript_chars, cost_rmb, created_at / started_at / finished_at | ✅ M1 已落地（SQLite `tasks` 表） |
+| Task | id, source_file, stored_path, status, progress, progress_message, error, audio_duration_min, transcript_chars, cost_rmb, created_at / started_at / finished_at | ✅ M1 已落地（SQLite `tasks` 表；`progress_message` 记录转写切片进度） |
 | Transcript | task_id, segments[]（start/end/text） | ✅ M1 已落地（`transcript.json` / `.txt`） |
 | Minute | task_id, title, summary_md, decisions[], actions[], open_questions[], speakers[] | 🔶 M2 扩展（结构化 + speaker） |
 

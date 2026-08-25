@@ -29,7 +29,7 @@ def run_task(task_id: str) -> None:
     title = Path(task["source_file"]).stem
 
     def _progress(pct: int, msg: str) -> None:
-        db.set_progress(task_id, pct)
+        db.set_progress(task_id, pct, msg)
 
     try:
         db.set_status(task_id, db.RUNNING)
@@ -52,7 +52,7 @@ def run_task(task_id: str) -> None:
                 transcript_chars=metrics.get("transcript_chars"),
                 cost_rmb=metrics.get("total_cost_rmb"),
             )
-            db.set_progress(task_id, 100)
+            db.set_progress(task_id, 100, "完成")
             db.set_status(task_id, db.SUCCEEDED)
             logger.info("task=%s 成功 cost=¥%s", task_id, metrics.get("total_cost_rmb"))
             return

@@ -94,10 +94,11 @@ class OpenAILikeLLM(LLMProvider):
 class DeepSeekLLM(OpenAILikeLLM):
     name = "deepseek"
 
-    def __init__(self, api_key: str = "", model: str = "deepseek-chat", max_chars: int = 12000):
+    def __init__(self, api_key: str = "", model: str = "", max_chars: int = 12000):
         import config
         super().__init__("deepseek", "https://api.deepseek.com",
-                         api_key or config.DEEPSEEK_API_KEY, model, max_chars)
+                         api_key or config.DEEPSEEK_API_KEY,
+                         model or config.DEEPSEEK_MODEL, max_chars)
 
 
 class QwenLLM(OpenAILikeLLM):

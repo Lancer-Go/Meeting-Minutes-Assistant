@@ -57,7 +57,8 @@ class ASRProvider(ABC):
     model = ""
 
     @abstractmethod
-    def transcribe(self, wav: Path) -> Transcript:
+    def transcribe(self, wav: Path, progress_callback=None) -> Transcript:
+        """转写音频。progress_callback(done: int, total: int) 可选，用于切片级进度回调。"""
         ...
 
 
@@ -83,12 +84,17 @@ class WhisperLocalASR(ASRProvider):
                                    compute_type=self.compute_type)
         return self._m
 
-    def transcribe(self, wav: Path) -> Transcript:
+    def transcribe(self, wav: Path, progress_callback=None) -> Transcript:
         t0 = time.time()
         m = self._load()
+        total = audio.get_duration(wav)
         seg_iter, _info = m.transcribe(str(wav), language=self.language,
                                        vad_filter=True, beam_size=5)
-        segs = [Segment(float(s.start), float(s.end), s.text) for s in seg_iter]
+        segs = []
+        for s in seg_iter:
+            segs.append(Segment(float(s.start), float(s.end), s.text))
+            if progress_callback and total > 0:
+                progress_callback(int(min(s.end, total)), int(total))
         text = "".join(s.text for s in segs)
         return Transcript(segments=segs, text=text, provider=self.name,
                           model=self.model_name, elapsed_s=time.time() - t0,
@@ -165,7 +171,7 @@ class TencentASR(ASRProvider):
                                 r.FinalSentence or ""))
         return segs
 
-    def transcribe(self, wav: Path) -> Transcript:
+    def transcribe(self, wav: Path, progress_callback=None) -> Transcript:
         t0 = time.time()
         wav = Path(wav)
         # 超切片时长或超 base64 上限 → 切片逐段识别
@@ -179,10 +185,14 @@ class TencentASR(ASRProvider):
                     s.start += offset
                     s.end += offset
                     all_segs.append(s)
+                if progress_callback:
+                    progress_callback(i + 1, len(chunks))
             text = "".join(s.text for s in all_segs)
         else:
             all_segs = self._recognize_chunk(wav)
             text = "".join(s.text for s in all_segs)
+            if progress_callback:
+                progress_callback(1, 1)
         return Transcript(segments=all_segs, text=text, provider=self.name,
                           model=self.engine, elapsed_s=time.time() - t0,
                           cost_rmb=0.0)  # 成本估算见 pipeline.estimate_cost
@@ -210,7 +220,7 @@ class AliyunNLSRealtimeASR(ASRProvider):
                 "（阿里云智能语音交互的 AppKey 是 NLS 体系，需配套 AccessKey。）"
             )
 
-    def transcribe(self, wav: Path) -> Transcript:
+    def transcribe(self, wav: Path, progress_callback=None) -> Transcript:
         import json as _json
         import time as _t
         import wave as _wave
@@ -283,7 +293,7 @@ class IFlytekASR(ASRProvider):
         if not (self.app_id and self.api_key and self.api_secret):
             raise RuntimeError("缺少讯飞 XFYUN_APP_ID / XFYUN_API_KEY / XFYUN_API_SECRET。")
 
-    def transcribe(self, wav: Path) -> Transcript:
+    def transcribe(self, wav: Path, progress_callback=None) -> Transcript:
         raise NotImplementedError(
             "讯飞录音文件识别（LFASR）尚未实现：需 HMAC-SHA256 签名 + 音频上传 + 轮询结果。"
         )

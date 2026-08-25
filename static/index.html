@@ -102,7 +102,8 @@ function poll(id) {
     try {
       const resp = await fetch('/api/tasks/' + id);
       const t = await resp.json();
-      setStatus(`${STATUS_TEXT[t.status] || t.status}（${Math.round(t.progress || 0)}%）`);
+      const pmsg = t.progress_message ? ` — ${t.progress_message}` : '';
+      setStatus(`${STATUS_TEXT[t.status] || t.status}（${Math.round(t.progress || 0)}%）${pmsg}`);
       $('bar').style.width = (t.progress || 0) + '%';
       if (t.status === 'succeeded') {
         clearInterval(timer);

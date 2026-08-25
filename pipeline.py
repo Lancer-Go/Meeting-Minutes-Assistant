@@ -27,7 +27,7 @@ ASR_PRICE_RMB_PER_MIN = {
     "iflytek": 2.0 / 60,   # 讯飞 ~¥2.0/h → 每分钟
 }
 LLM_PRICE_RMB_PER_1K_TOKENS = {
-    "deepseek": 0.002,     # deepseek-chat 输入 ~¥2/百万 token（估）
+    "deepseek": 0.002,     # deepseek-v4-pro 输入 ~¥2/百万 token（估）
     "qwen": 0.002,         # qwen-plus 估
     "extractive": 0.0,
 }

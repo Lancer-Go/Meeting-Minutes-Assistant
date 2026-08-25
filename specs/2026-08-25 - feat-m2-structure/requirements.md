@@ -6,7 +6,7 @@
 | 分支 | feat/m2-structure |
 | 关联文档 | [roadmap.md](../../docs/roadmap.md) · [mission.md](../../docs/mission.md) · [tech-stack.md](../../docs/tech-stack.md) |
 
-> 本文说明 M2 的**范围、已定决策与上下文**，作为 plan.md 的依据与 validation.md 的对照。M2 复用 M0 已锁定选型（ASR 腾讯云 16k_zh / LLM DeepSeek-chat，见 [选型决策记录](../../docs/decisions/选型决策记录.md)），新增结构化输出（Function-Calling）、说话人分离、角色识别、模板渲染与编辑检索，不重复 ASR/LLM 主方案选型。
+> 本文说明 M2 的**范围、已定决策与上下文**，作为 plan.md 的依据与 validation.md 的对照。M2 复用 M0 已锁定选型（ASR 腾讯云 16k_zh / LLM DeepSeek-V4 Pro（deepseek-v4-pro，由 V3 升级），见 [选型决策记录](../../docs/decisions/选型决策记录.md)），新增结构化输出（Function-Calling）、说话人分离、角色识别、模板渲染与编辑检索，不重复 ASR/LLM 主方案选型。
 
 ## 1. 目标（一句话）
 
@@ -48,7 +48,7 @@
 | 2 | ASR 选型 | ✅ 走云 API（接受数据出域） | 说话人分离优先用云 ASR 内置能力；本地兜底仅评测/降本场景 |
 | 3 | 主要语言 | ✅ 中文为主，英文术语混用 | 抽取/角色识别提示词按中文为主设计 |
 | 4 | 会议时长 | ✅ 单场 ≤ 2 小时 | 长文本抽取沿用 Map-Reduce 分块，避免超上下文 |
-| 5 | 成本预算 | ✅ 利润 0，性价比优先 | Function-Calling 复用 DeepSeek-chat，抽取增量成本计入单场成本估算 |
+| 5 | 成本预算 | ✅ 利润 0，性价比优先 | Function-Calling 复用 DeepSeek-V4 Pro（deepseek-v4-pro），抽取增量成本计入单场成本估算 |
 | 6 | IM/待办集成 | 🕐 暂不需要 | M2 不做第三方集成，行动项仅结构化存储 |
 | 7 | 输出格式 | ✅ Markdown 即可 | 三套模板均输出 Markdown，不做 PDF/docx |
 
@@ -57,7 +57,7 @@
 | 决策点 | 已定方向 | 锁定结论 | M2 用法 |
 | --- | --- | --- | --- |
 | ASR 主方案 | ✅ 云 API | ✅ 腾讯云 16k_zh（备选阿里云 NLS，本地兜底 faster-whisper） | 复用 `asr` 模块；新增话者分离能力 |
-| LLM 主方案 | ✅ 性价比高 | ✅ DeepSeek-V3（deepseek-chat）（备选 Qwen） | `extractor` 走 Function-Calling；`summary` 复用 |
+| LLM 主方案 | ✅ 性价比高 | ✅ DeepSeek-V4 Pro（deepseek-v4-pro）（备选 Qwen） | `extractor` 走 Function-Calling；`summary` 复用 |
 | 说话人分离 | 🔶 云 ASR 内置（首选）/ pyannote（兜底）/ whisperX（备选） | M2 实测确认腾讯云话者分离，pyannote 兜底 | `DiarizationProvider` 抽象 |
 | 结构化输出 | ✅ Function-Calling / JSON Schema | — | `extractor` 的 `tool_schema` |
 | 模板渲染 | 🔶 Jinja2 | — | `render` 三套模板 |
@@ -67,6 +67,8 @@
 ## 5. 约束与假设
 
 - 运行环境：Python 3.11 + FastAPI + FFmpeg + SQLite，`venv` 隔离；ASR/LLM 走云 API（`.env` 密钥，M0/M1 已配置）。
+- LLM 模型升级：2026-08-25 起 summary / extractor 主用 DeepSeek-V4 Pro（deepseek-v4-pro，替换 M0 锁定的 V3），提升会议总结质量；V4 Pro 单场成本待重新实测。
+- 转写进度：转写阶段已按切片推进进度（「第 x/N 段已完成」，M1 FR-07 增强），M2 复用该进度展示。
 - 单机假设：沿用 M1 的 BackgroundTasks + SQLite，不引入分布式队列 / 向量库。
 - 说话人分离风险：腾讯云 16k_zh 是否稳定返回 speaker 标签需实测；若不支持，pyannote-audio 本地兜底（新增依赖，首次需下载模型）。
 - 长文本：抽取与角色识别沿用 Map-Reduce 分块，避免超上下文（mission §7 风险）。

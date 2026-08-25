@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     stored_path TEXT,
     status TEXT NOT NULL DEFAULT 'pending',
     progress REAL NOT NULL DEFAULT 0,
+    progress_message TEXT,
     error TEXT,
     audio_duration_min REAL,
     transcript_chars INTEGER,
@@ -52,10 +53,13 @@ def _connect(db_path: Path | None = None) -> sqlite3.Connection:
 
 
 def init_db(db_path: Path | None = None) -> None:
-    """建表（幂等）。"""
+    """建表（幂等），并为旧库补充新增列（轻量迁移）。"""
     conn = _connect(db_path)
     try:
         conn.executescript(_SCHEMA)
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(tasks)")}
+        if "progress_message" not in cols:
+            conn.execute("ALTER TABLE tasks ADD COLUMN progress_message TEXT")
         conn.commit()
     finally:
         conn.close()
@@ -122,11 +126,17 @@ def set_status(task_id: str, new_status: str, db_path: Path | None = None) -> di
     return get_task(task_id, db_path) or {}
 
 
-def set_progress(task_id: str, progress: float, db_path: Path | None = None) -> None:
+def set_progress(task_id: str, progress: float, message: str | None = None,
+                 db_path: Path | None = None) -> None:
+    """更新任务进度（0–100），可选附带进度说明（如「第 12/48 段已完成」）。"""
     progress = max(0.0, min(100.0, float(progress)))
     conn = _connect(db_path)
     try:
-        conn.execute("UPDATE tasks SET progress = ? WHERE id = ?", (progress, task_id))
+        if message is None:
+            conn.execute("UPDATE tasks SET progress = ? WHERE id = ?", (progress, task_id))
+        else:
+            conn.execute("UPDATE tasks SET progress = ?, progress_message = ? WHERE id = ?",
+                         (progress, message, task_id))
         conn.commit()
     finally:
         conn.close()

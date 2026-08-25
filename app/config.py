@@ -53,6 +53,7 @@ DEFAULT_ASR = os.getenv("MMA_ASR", "tencent")            # tencent | aliyun | wh
 DEFAULT_LLM = os.getenv("MMA_LLM", "deepseek")           # deepseek | qwen | extractive
 WHISPER_MODEL = os.getenv("MMA_WHISPER_MODEL", "base")   # tiny/base/small/medium/large-v3
 LLM_MAX_CHARS = int(os.getenv("MMA_LLM_MAX_CHARS", "12000"))  # Map-Reduce 分块阈值（字符）
+DEEPSEEK_MODEL = os.getenv("MMA_DEEPSEEK_MODEL", "deepseek-v4-pro")  # LLM 主用模型（DeepSeek-V4 Pro）
 
 # 云端密钥缺失时的离线降级（validation.md 判定规则）
 ASR_FALLBACK = "whisper"

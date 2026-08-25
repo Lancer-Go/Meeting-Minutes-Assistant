@@ -3,7 +3,7 @@
 将会议录音/录像自动转写为文字，并生成结构化 Markdown 会议纪要。
 
 > 当前进度：**M1 · MVP（可用闭环 · 云 API）** —— FastAPI 服务 + 异步全链路，无技术背景用户可自助「上传 → 得到纪要」。
-> 选型已锁定（M0 实测）：ASR 腾讯云 16k_zh / LLM DeepSeek-chat。详见 `specs/` 与 `docs/roadmap.md`。
+> 选型已锁定（M0 实测）：ASR 腾讯云 16k_zh / LLM DeepSeek-V4 Pro（deepseek-v4-pro，由 V3 升级）。详见 `specs/` 与 `docs/roadmap.md`。
 
 ## 快速开始（服务模式）
 
@@ -39,7 +39,7 @@ docker compose up --build
 | GET | `/health` | 健康检查 |
 
 - 支持格式：MP4 / MKV / WAV / MP3 / M4A，单场 ≤ 2 小时。
-- 状态机：`pending → running → succeeded / failed`；进度 0–100。
+- 状态机：`pending → running → succeeded / failed`；进度 0–100，转写阶段按切片推进（「第 x/N 段已完成」）。
 - 云端 ASR/LLM 密钥缺失时自动降级（`whisper` / `extractive`），保证链路可跑通。
 
 ## 任务组（M1）

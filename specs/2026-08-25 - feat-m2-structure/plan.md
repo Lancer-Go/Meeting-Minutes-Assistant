@@ -6,7 +6,7 @@
 | 分支 | feat/m2-structure |
 | 关联文档 | [roadmap.md](../../docs/roadmap.md) · [mission.md](../../docs/mission.md) · [tech-stack.md](../../docs/tech-stack.md) |
 
-> 本文把 roadmap.md 中 M2 的 8 步工作顺序组织为可执行的**任务组**。每个任务组含目标、任务项、产出与验收；任务组之间按依赖推进（前一组的验收是后一组的输入）。M2 在 M1「可用完整闭环」基础上做**纪要质量增强**：结构化行动项（FR-05 细化）、说话人角色标注（FR-03 细化）、多模板（FR-08）、可编辑与历史检索（FR-09/FR-10/FR-11）。复用 M0/M1 已锁定选型（ASR 腾讯云 16k_zh / LLM DeepSeek-chat），新增 Function-Calling 结构化输出、说话人分离、角色识别、Jinja2 模板、编辑批注、历史检索与 Eval 集。
+> 本文把 roadmap.md 中 M2 的 8 步工作顺序组织为可执行的**任务组**。每个任务组含目标、任务项、产出与验收；任务组之间按依赖推进（前一组的验收是后一组的输入）。M2 在 M1「可用完整闭环」基础上做**纪要质量增强**：结构化行动项（FR-05 细化）、说话人角色标注（FR-03 细化）、多模板（FR-08）、可编辑与历史检索（FR-09/FR-10/FR-11）。复用 M0/M1 已锁定选型（ASR 腾讯云 16k_zh / LLM DeepSeek-V4 Pro（deepseek-v4-pro，由 V3 升级）），新增 Function-Calling 结构化输出、说话人分离、角色识别、Jinja2 模板、编辑批注、历史检索与 Eval 集。
 
 ## 任务组总览
 

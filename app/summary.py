@@ -1,7 +1,7 @@
 """M1 · summary 模块 — 纪要生成（可插拔 LLM Provider）。
 
 抽象 `LLMProvider`：deepseek / qwen 走 OpenAI 兼容接口（需密钥），长文本 Map-Reduce 分块；
-extractive 为本地抽取式基线（离线兜底）。主用 DeepSeek-chat（M0 锁定）。
+extractive 为本地抽取式基线（离线兜底）。主用 DeepSeek-V4 Pro（deepseek-v4-pro，由 M0 锁定的 DeepSeek-V3 升级）。
 """
 from __future__ import annotations
 
@@ -92,9 +92,10 @@ class OpenAILikeLLM(LLMProvider):
 class DeepSeekLLM(OpenAILikeLLM):
     name = "deepseek"
 
-    def __init__(self, api_key: str = "", model: str = "deepseek-chat", max_chars: int = 12000):
+    def __init__(self, api_key: str = "", model: str = "", max_chars: int = 12000):
         super().__init__("deepseek", "https://api.deepseek.com",
-                         api_key or config.DEEPSEEK_API_KEY, model, max_chars)
+                         api_key or config.DEEPSEEK_API_KEY,
+                         model or config.DEEPSEEK_MODEL, max_chars)
 
 
 class QwenLLM(OpenAILikeLLM):
