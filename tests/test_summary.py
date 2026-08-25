@@ -59,3 +59,10 @@ def test_deepseek_requires_credentials(monkeypatch):
     assert has_cloud_credentials("deepseek") is False
     with pytest.raises(RuntimeError):
         get_llm_provider("deepseek")
+
+
+def test_deepseek_default_model():
+    from app import config
+    from app.summary import DeepSeekLLM
+    assert config.DEEPSEEK_MODEL == "deepseek-v4-pro"
+    assert DeepSeekLLM(api_key="fake-key").model == "deepseek-v4-pro"

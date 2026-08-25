@@ -18,6 +18,7 @@ class Segment:
     start: float
     end: float
     text: str
+    speaker: str = ""  # M2 说话人标注（TG-0/TG-2 回填，默认空）
 
 
 @dataclass
@@ -28,17 +29,19 @@ class Transcript:
     model: str = ""
     elapsed_s: float = 0.0
     cost_rmb: float = 0.0  # 估算成本（元），实际以账单为准
+    speakers: list[str] = field(default_factory=list)  # M2 去重说话人列表
 
     @property
     def char_count(self) -> int:
         return len(self.text)
 
-    def to_timestamped_text(self) -> str:
+    def to_timestamped_text(self, with_speaker: bool = False) -> str:
         lines = []
         for s in self.segments:
             mm = int(s.start // 60)
             ss = s.start % 60
-            lines.append(f"[{mm:02d}:{ss:05.2f}] {s.text.strip()}")
+            tag = f" [{s.speaker}]" if (with_speaker and s.speaker) else ""
+            lines.append(f"[{mm:02d}:{ss:05.2f}]{tag} {s.text.strip()}")
         return "\n".join(lines)
 
     def to_dict(self) -> dict:
@@ -46,6 +49,7 @@ class Transcript:
             "provider": self.provider, "model": self.model,
             "elapsed_s": round(self.elapsed_s, 2), "cost_rmb": round(self.cost_rmb, 4),
             "char_count": self.char_count,
+            "speakers": self.speakers,
             "segments": [asdict(s) for s in self.segments],
             "text": self.text,
         }
@@ -57,7 +61,8 @@ class ASRProvider(ABC):
     model = ""
 
     @abstractmethod
-    def transcribe(self, wav: Path) -> Transcript:
+    def transcribe(self, wav: Path, progress_callback=None) -> Transcript:
+        """转写音频。progress_callback(done: int, total: int) 可选，用于切片级进度回调。"""
         ...
 
 
@@ -83,12 +88,17 @@ class WhisperLocalASR(ASRProvider):
                                    compute_type=self.compute_type)
         return self._m
 
-    def transcribe(self, wav: Path) -> Transcript:
+    def transcribe(self, wav: Path, progress_callback=None) -> Transcript:
         t0 = time.time()
         m = self._load()
+        total = audio.get_duration(wav)
         seg_iter, _info = m.transcribe(str(wav), language=self.language,
                                        vad_filter=True, beam_size=5)
-        segs = [Segment(float(s.start), float(s.end), s.text) for s in seg_iter]
+        segs = []
+        for s in seg_iter:
+            segs.append(Segment(float(s.start), float(s.end), s.text))
+            if progress_callback and total > 0:
+                progress_callback(int(min(s.end, total)), int(total))
         text = "".join(s.text for s in segs)
         return Transcript(segments=segs, text=text, provider=self.name,
                           model=self.model_name, elapsed_s=time.time() - t0,
@@ -105,12 +115,14 @@ class TencentASR(ASRProvider):
     name = "tencent"
 
     def __init__(self, secret_id: str = "", secret_key: str = "",
-                 engine: str = "16k_zh", chunk_seconds: float | None = None):
+                 engine: str = "16k_zh", chunk_seconds: float | None = None,
+                 speaker_diarization: bool = True):
         self.secret_id = secret_id or config.TENCENT_SECRET_ID
         self.secret_key = secret_key or config.TENCENT_SECRET_KEY
         self.engine = engine
         self.model = engine
         self.chunk_seconds = chunk_seconds or config.ASR_CHUNK_SECONDS
+        self.speaker_diarization = speaker_diarization  # M2 话者分离（TG-2）
         if not (self.secret_id and self.secret_key):
             raise RuntimeError("缺少 TENCENT_SECRET_ID / TENCENT_SECRET_KEY（腾讯云）。请在 .env 配置后重试。")
 
@@ -140,6 +152,11 @@ class TencentASR(ASRProvider):
         req.SourceType = 1        # 音频数据（base64）
         req.Data = base64.b64encode(raw).decode()
         req.DataLen = len(raw)
+        if self.speaker_diarization:
+            try:  # 开启话者分离（若 SDK/接口支持，结果含 SpeakerId）
+                req.SpeakerDiarization = 1
+            except Exception:  # noqa: BLE001 — 旧版 SDK 无此字段则忽略
+                pass
 
         resp = client.CreateRecTask(req)
         task_id = resp.Data.TaskId
@@ -162,10 +179,11 @@ class TencentASR(ASRProvider):
         segs = []
         for r in sresp.Data.ResultDetail or []:
             segs.append(Segment(float(r.StartMs) / 1000.0, float(r.EndMs) / 1000.0,
-                                r.FinalSentence or ""))
+                                r.FinalSentence or "",
+                                speaker=str(getattr(r, "SpeakerId", "") or "")))
         return segs
 
-    def transcribe(self, wav: Path) -> Transcript:
+    def transcribe(self, wav: Path, progress_callback=None) -> Transcript:
         t0 = time.time()
         wav = Path(wav)
         # 超切片时长或超 base64 上限 → 切片逐段识别
@@ -179,10 +197,14 @@ class TencentASR(ASRProvider):
                     s.start += offset
                     s.end += offset
                     all_segs.append(s)
+                if progress_callback:
+                    progress_callback(i + 1, len(chunks))
             text = "".join(s.text for s in all_segs)
         else:
             all_segs = self._recognize_chunk(wav)
             text = "".join(s.text for s in all_segs)
+            if progress_callback:
+                progress_callback(1, 1)
         return Transcript(segments=all_segs, text=text, provider=self.name,
                           model=self.engine, elapsed_s=time.time() - t0,
                           cost_rmb=0.0)  # 成本估算见 pipeline.estimate_cost
@@ -210,7 +232,7 @@ class AliyunNLSRealtimeASR(ASRProvider):
                 "（阿里云智能语音交互的 AppKey 是 NLS 体系，需配套 AccessKey。）"
             )
 
-    def transcribe(self, wav: Path) -> Transcript:
+    def transcribe(self, wav: Path, progress_callback=None) -> Transcript:
         import json as _json
         import time as _t
         import wave as _wave
@@ -283,7 +305,7 @@ class IFlytekASR(ASRProvider):
         if not (self.app_id and self.api_key and self.api_secret):
             raise RuntimeError("缺少讯飞 XFYUN_APP_ID / XFYUN_API_KEY / XFYUN_API_SECRET。")
 
-    def transcribe(self, wav: Path) -> Transcript:
+    def transcribe(self, wav: Path, progress_callback=None) -> Transcript:
         raise NotImplementedError(
             "讯飞录音文件识别（LFASR）尚未实现：需 HMAC-SHA256 签名 + 音频上传 + 轮询结果。"
         )

@@ -1,0 +1,17 @@
+{
+  "task_id": "seed-001",
+  "title": "产品需求评审会",
+  "note": "种子样例（待人工复核），用于验证评测脚本；不作为最终指标依据。",
+  "actions": [
+    {"description": "完成登录模块开发", "owner": "张三", "due": "本周五", "priority": "高", "status": "进行中"},
+    {"description": "输出视觉稿终版", "owner": "李四", "due": "下周一", "priority": "高", "status": "待办"},
+    {"description": "确认服务器预算", "owner": "王五", "due": "下周三", "priority": "中", "status": "待办"}
+  ],
+  "speaker_segments": [
+    {"start": 0.0, "end": 5.0, "speaker": "S1"},
+    {"start": 5.0, "end": 10.0, "speaker": "S2"},
+    {"start": 10.0, "end": 15.0, "speaker": "S1"},
+    {"start": 15.0, "end": 20.0, "speaker": "S2"}
+  ],
+  "minutes_md": "# 产品需求评审会\n\n## 核心决议\n- 确定 v1.0 功能范围\n\n## 行动项\n| 事项 | 负责人 | 截止时间 |\n| --- | --- | --- |\n| 完成登录模块开发 | 张三 | 本周五 |\n| 输出视觉稿终版 | 李四 | 下周一 |\n| 确认服务器预算 | 王五 | 下周三 |\n"
+}

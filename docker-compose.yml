@@ -4,7 +4,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      # ASR / LLM 主选（M0 锁定：腾讯云 16k_zh / DeepSeek-chat）
+      # ASR / LLM 主选（M0 锁定：腾讯云 16k_zh / DeepSeek-V4 Pro）
       MMA_ASR: tencent
       MMA_LLM: deepseek
       MMA_DATA_DIR: /data

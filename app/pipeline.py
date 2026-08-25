@@ -1,7 +1,8 @@
-"""M1 · pipeline 模块 — 全链路编排与成本估算。
+"""M1 · pipeline 模块 — 全链路编排与成本估算；M2 扩展结构化抽取 / 说话人 / 角色 / 模板渲染。
 
-「音频提取 → 转写 → 纪要 → 渲染」端到端串联，记录耗时/成本/字符数。
-云端密钥缺失时自动降级到离线兜底（whisper / extractive），保证链路可跑通。
+「音频提取 → 转写 → 说话人分离 → 角色识别 → 纪要 + 结构化抽取 → 模板渲染」端到端串联，
+记录耗时/成本/字符数。云端密钥缺失时自动降级到离线兜底（whisper / extractive / rule），
+保证链路可跑通。
 """
 from __future__ import annotations
 
@@ -12,7 +13,16 @@ from pathlib import Path
 
 from app import audio, config
 from app.asr import get_asr_provider, has_cloud_credentials as asr_has_creds
-from app.render import build_minutes_md
+from app.diarization import (
+    assign_speakers,
+    distinct_speakers,
+    get_diarization_provider,
+    has_speakers,
+)
+from app.extractor import get_extractor_provider, has_cloud_credentials as extractor_has_creds
+from app.render import render_minutes
+from app.role import identify_roles
+from app.schemas import StructuredMinute
 from app.summary import get_llm_provider, has_cloud_credentials as llm_has_creds
 
 # 估算价格（列表价，仅作量级估算，实际以账单为准）
@@ -23,7 +33,7 @@ ASR_PRICE_RMB_PER_MIN = {
     "iflytek": 2.0 / 60,   # 讯飞 ~¥2.0/h → 每分钟
 }
 LLM_PRICE_RMB_PER_1K_TOKENS = {
-    "deepseek": 0.002,     # deepseek-chat 输入 ~¥2/百万 token（估）
+    "deepseek": 0.002,     # deepseek-v4-pro 输入 ~¥2/百万 token（估）
     "qwen": 0.002,         # qwen-plus 估
     "extractive": 0.0,
 }
@@ -53,14 +63,27 @@ def resolve_llm_name(requested: str) -> str:
     return requested
 
 
+def resolve_extractor_name(requested: str) -> str:
+    """云端抽取器无密钥时降级到本地规则兜底。"""
+    if requested != "rule" and not extractor_has_creds(requested):
+        return config.EXTRACTOR_FALLBACK
+    return requested
+
+
 def run(input_path: Path, out_dir: Path, asr_name: str, llm_name: str,
-        title: str = "会议纪要", progress_callback=None) -> dict:
+        title: str = "会议纪要", progress_callback=None,
+        extractor_name: str | None = None, diarization_name: str | None = None,
+        template_name: str | None = None) -> dict:
     """端到端跑通全链路，产物写入 out_dir，返回 metrics。
 
     progress_callback(percent: int, message: str) 在各阶段回调，用于进度展示。
+    extractor_name / diarization_name / template_name 为空时取 config 默认。
     """
     asr_name = resolve_asr_name(asr_name)
     llm_name = resolve_llm_name(llm_name)
+    extractor_name = resolve_extractor_name(extractor_name or config.DEFAULT_EXTRACTOR)
+    diarization_name = diarization_name or config.DEFAULT_DIARIZATION
+    template_name = template_name or config.DEFAULT_TEMPLATE
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -77,36 +100,82 @@ def run(input_path: Path, out_dir: Path, asr_name: str, llm_name: str,
     metrics["audio_elapsed_s"] = round(time.time() - t0, 2)
     audio_minutes = audio.get_duration(wav) / 60
 
-    # 2) 转写
+    # 2) 转写（按切片推进进度：腾讯云逐段识别，本地 whisper 按已处理时长）
     _report(20, "语音转写")
     asr_kwargs = {"model": config.WHISPER_MODEL} if asr_name == "whisper" else {}
     asr_provider = get_asr_provider(asr_name, **asr_kwargs)
+
+    def _asr_progress(done: int, total: int) -> None:
+        pct = 20 + int(60 * done / max(total, 1))
+        if asr_name == "tencent":
+            _report(pct, f"语音转写：第 {done}/{total} 段已完成")
+        else:
+            _report(pct, f"语音转写：已处理 {done}/{total} 秒")
+
     t0 = time.time()
-    transcript = asr_provider.transcribe(wav)
+    transcript = asr_provider.transcribe(wav, progress_callback=_asr_progress)
     metrics["asr_elapsed_s"] = round(time.time() - t0, 2)
+
+    # 3) 说话人分离（M2）：云 ASR 未返回 speaker 时，走 diarization provider 兜底
+    if not has_speakers(transcript.segments):
+        try:
+            diar = get_diarization_provider(diarization_name)
+            assign_speakers(transcript.segments, diar.diarize(wav, transcript.segments))
+            metrics["diarization"] = diarization_name
+        except Exception as e:  # noqa: BLE001 — 兜底失败则占位标记 S1/S2/...
+            from app.diarization import PlaceholderDiarization
+            assign_speakers(transcript.segments,
+                            PlaceholderDiarization().diarize(wav, transcript.segments))
+            metrics["diarization"] = f"{diarization_name}(降级 placeholder): {e}"
+    else:
+        metrics["diarization"] = "cloud-asr-builtin"
+    transcript.speakers = distinct_speakers(transcript.segments)
 
     (out_dir / "transcript.json").write_text(
         json.dumps(transcript.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
     (out_dir / "transcript.txt").write_text(transcript.to_timestamped_text(), encoding="utf-8")
 
-    # 3) 纪要
+    # 4) 角色识别（M2）
+    speakers = identify_roles(transcript.segments)
+
+    # 5) 纪要 + 结构化抽取（M2）
     _report(80, "生成纪要")
     llm_provider = get_llm_provider(llm_name)
     t0 = time.time()
     body_md = llm_provider.summarize(transcript)
     llm_elapsed = time.time() - t0
 
-    # 4) 渲染
+    extractor_provider = get_extractor_provider(extractor_name)
+    t0 = time.time()
+    extracted = extractor_provider.extract(transcript)
+    extractor_elapsed = time.time() - t0
+
+    structured = StructuredMinute(
+        title=title,
+        summary_md=body_md,
+        decisions=extracted.decisions,
+        actions=extracted.actions,
+        open_questions=extracted.open_questions,
+        speakers=speakers,
+    )
+    (out_dir / "structured_minute.json").write_text(
+        json.dumps(structured.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # 6) 模板渲染（M2）：默认「标准」，另输出精简/详细便于验收
     meta = {
         "title": title,
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "duration_min": audio_minutes,
         "asr": f"{transcript.provider} / {transcript.model}",
     }
-    minutes_md = build_minutes_md(meta, body_md)
-    (out_dir / "minutes.md").write_text(minutes_md, encoding="utf-8")
+    transcript_text = transcript.to_timestamped_text(with_speaker=True)
+    (out_dir / "minutes.md").write_text(
+        render_minutes(structured, template_name, meta, transcript_text), encoding="utf-8")
+    for tname in ("brief", "detailed"):
+        (out_dir / f"minutes.{tname}.md").write_text(
+            render_minutes(structured, tname, meta, transcript_text), encoding="utf-8")
 
-    # 5) 指标汇总
+    # 7) 指标汇总
     asr_cost, llm_cost = estimate_cost(asr_name, audio_minutes, llm_name, transcript.char_count)
     metrics.update({
         "audio_duration_min": round(audio_minutes, 2),
@@ -114,11 +183,21 @@ def run(input_path: Path, out_dir: Path, asr_name: str, llm_name: str,
                 "elapsed_s": metrics["asr_elapsed_s"], "cost_rmb": round(asr_cost, 4)},
         "llm": {"provider": llm_name, "model": getattr(llm_provider, "model", ""),
                 "elapsed_s": round(llm_elapsed, 2), "cost_rmb": round(llm_cost, 4)},
+        "extractor": {"provider": extractor_name,
+                      "model": getattr(extractor_provider, "model", ""),
+                      "elapsed_s": round(extractor_elapsed, 2)},
         "transcript_chars": transcript.char_count,
-        "total_elapsed_s": round(metrics["audio_elapsed_s"] + metrics["asr_elapsed_s"] + llm_elapsed, 2),
+        "structured": {
+            "n_decisions": len(structured.decisions),
+            "n_actions": len(structured.actions),
+            "n_open_questions": len(structured.open_questions),
+            "n_speakers": len(structured.speakers),
+        },
+        "total_elapsed_s": round(metrics["audio_elapsed_s"] + metrics["asr_elapsed_s"]
+                                 + llm_elapsed + extractor_elapsed, 2),
         "total_cost_rmb": round(asr_cost + llm_cost, 4),
         "ratio_elapsed_to_duration": round(
-            (metrics["audio_elapsed_s"] + metrics["asr_elapsed_s"] + llm_elapsed)
+            (metrics["audio_elapsed_s"] + metrics["asr_elapsed_s"] + llm_elapsed + extractor_elapsed)
             / max(audio_minutes * 60, 1e-6), 3),
         "finished_at": datetime.now().isoformat(timespec="seconds"),
     })

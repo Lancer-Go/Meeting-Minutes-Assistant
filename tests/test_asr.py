@@ -92,3 +92,22 @@ def test_iflytek_requires_credentials(monkeypatch):
     monkeypatch.setattr(config, "XFYUN_API_SECRET", "")
     with pytest.raises(RuntimeError):
         get_asr_provider("iflytek")
+
+
+def test_tencent_slice_progress(monkeypatch, tmp_path):
+    from app import audio
+    from app.asr import TencentASR
+
+    p = TencentASR(secret_id="id", secret_key="key", chunk_seconds=100)
+    fake_chunks = [tmp_path / f"c{i}.wav" for i in range(3)]
+    for c in fake_chunks:
+        c.write_bytes(b"RIFFxxxx")
+    monkeypatch.setattr(audio, "get_duration", lambda wav: 350.0)  # > chunk_seconds+5 → 切片
+    monkeypatch.setattr(audio, "split_wav", lambda wav, sec, out: fake_chunks)
+    monkeypatch.setattr(p, "_recognize_chunk", lambda c: [Segment(0.0, 1.0, "你好")])
+
+    progress = []
+    t = p.transcribe(tmp_path / "in.wav",
+                     progress_callback=lambda d, total: progress.append((d, total)))
+    assert progress == [(1, 3), (2, 3), (3, 3)]
+    assert t.segments[0].text == "你好"

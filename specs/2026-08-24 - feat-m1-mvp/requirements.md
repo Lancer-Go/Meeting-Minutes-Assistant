@@ -6,7 +6,7 @@
 | 分支 | feat/m1-mvp |
 | 关联文档 | [roadmap.md](../../docs/roadmap.md) · [mission.md](../../docs/mission.md) · [tech-stack.md](../../docs/tech-stack.md) |
 
-> 本文说明 M1 的**范围、已定决策与上下文**，作为 plan.md 的依据与 validation.md 的对照。M1 复用 M0 已锁定选型（ASR 腾讯云 16k_zh / LLM DeepSeek-chat，见 [选型决策记录](../../docs/decisions/选型决策记录.md)），不再重复选型。
+> 本文说明 M1 的**范围、已定决策与上下文**，作为 plan.md 的依据与 validation.md 的对照。M1 复用 M0 已锁定选型（ASR 腾讯云 16k_zh / LLM DeepSeek-V4 Pro（deepseek-v4-pro，由 V3 升级），见 [选型决策记录](../../docs/decisions/选型决策记录.md)），不再重复选型。
 
 ## 1. 目标（一句话）
 
@@ -21,10 +21,10 @@
 | FR-01 | 文件上传 | `ingestion` 上传接口 + 格式白名单/大小/时长校验 |
 | FR-02 | 音频提取 | `audio` 模块（FFmpeg 抽音轨、标准化） |
 | FR-03 | 语音转写 | `asr` 模块（腾讯云 16k_zh，带时间戳） |
-| FR-04 | 纪要生成 | `summary` 模块（DeepSeek-chat，结构化 Markdown） |
+| FR-04 | 纪要生成 | `summary` 模块（DeepSeek-V4 Pro，结构化 Markdown） |
 | FR-05 | 行动项提取 | 纪要中含行动项清单（结构化抽取细化留 M2） |
 | FR-06 | 输出导出 | `render` 输出 Markdown + 下载接口 |
-| FR-07 | 任务状态 | Task 状态机 + 进度 + 运行日志 |
+| FR-07 | 任务状态 | Task 状态机 + 进度（转写按切片推进「第 x/N 段」）+ 运行日志 |
 
 - 后端：FastAPI（异步、类型友好）。
 - 任务队列：MVP 用轻量方案（FastAPI BackgroundTasks，预留 Celery+Redis 切换点）。
@@ -50,7 +50,7 @@
 | 2 | ASR 选型 | ✅ 走云 API（接受数据出域） | 复用腾讯云 16k_zh（M0 已锁定），无需本地 GPU |
 | 3 | 主要语言 | ✅ 中文为主，英文术语混用 | 转写/纪要链路按中文为主处理 |
 | 4 | 会议时长 | ✅ 单场 ≤ 2 小时 | 上传校验时长上限 ≤ 2h，文件大小相应控制 |
-| 5 | 成本预算 | ✅ 利润 0，性价比优先 | 沿用 DeepSeek-chat（单场 ¥0.045）+ 腾讯云 ASR，目标 ≤ ¥1/场 |
+| 5 | 成本预算 | ✅ 利润 0，性价比优先 | 沿用 DeepSeek-V4 Pro（deepseek-v4-pro）+ 腾讯云 ASR，目标 ≤ ¥1/场 |
 | 6 | IM/待办集成 | 🕐 暂不需要 | M1 不做第三方集成 |
 | 7 | 输出格式 | ✅ Markdown 即可 | 纪要/转写均 Markdown 输出，不做 PDF/docx |
 
@@ -59,7 +59,7 @@
 | 决策点 | 已定方向 | 锁定结论 | M1 用法 |
 | --- | --- | --- | --- |
 | ASR 主方案 | ✅ 云 API | ✅ 腾讯云 16k_zh（备选阿里云 NLS，本地兜底 faster-whisper） | `asr` 模块 `ASRProvider` 默认实现 |
-| LLM 主方案 | ✅ 性价比高 | ✅ DeepSeek-V3（deepseek-chat）（备选 Qwen） | `summary` 模块 `LLMProvider` 默认实现 |
+| LLM 主方案 | ✅ 性价比高 | ✅ DeepSeek-V4 Pro（deepseek-v4-pro）（备选 Qwen） | `summary` 模块 `LLMProvider` 默认实现 |
 | Web 框架 | 🔶 FastAPI | — | 服务层 |
 | 任务队列 | 🔶 Celery+Redis / BackgroundTasks | M1 用轻量方案，预留切换点 | `orchestrator` |
 | 存储 | 🔶 S3+PostgreSQL / 本地+SQLite | M1 用本地 FS + SQLite | `storage` |
@@ -81,7 +81,7 @@ M1 落地的是 tech-stack.md B2 中**处理流水线 + 基础设施的最小闭
 ingestion（上传/校验）
    → audio（FFmpeg 抽音轨）
    → asr（腾讯云 16k_zh 转写）
-   → summary（DeepSeek-chat 纪要）
+   → summary（DeepSeek-V4 Pro 纪要）
    → render（Markdown 渲染）
    ⇅ storage（本地 FS + SQLite 持久化）
    ⇅ orchestrator（任务状态机 + 队列调度）

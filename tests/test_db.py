@@ -55,6 +55,14 @@ def test_progress_clamp(dbfile):
     assert db.get_task("t1", db_path=dbfile)["progress"] == 0
 
 
+def test_set_progress_message(dbfile):
+    db.create_task("t1", "a", "", db_path=dbfile)
+    db.set_progress("t1", 48, "语音转写：第 12/48 段已完成", db_path=dbfile)
+    t = db.get_task("t1", db_path=dbfile)
+    assert t["progress"] == 48
+    assert t["progress_message"] == "语音转写：第 12/48 段已完成"
+
+
 def test_update_fields(dbfile):
     db.create_task("t1", "a", "", db_path=dbfile)
     db.update_fields("t1", db_path=dbfile, error="boom", cost_rmb=0.5,

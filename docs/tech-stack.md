@@ -2,7 +2,7 @@
 
 | 文档类型 | 技术栈与技术设计 |
 | --- | --- |
-| 版本 / 状态 | v0.3（M0 实测已锁定厂商）✅ |
+| 版本 / 状态 | v0.6（M2 结构增强已落地：结构化抽取 / 说话人 / 角色 / 三模板 / 编辑检索 / Eval 集）✅ |
 | 关联文档 | [mission](mission.md) · [roadmap](roadmap.md) · [选型决策记录](decisions/选型决策记录.md) |
 
 > 说明：本文汇总技术选型（Part A）与技术设计（Part B：需求、架构、方案、数据、测试、部署）。标记 🔶【建议】为倾向方案，✅【已定】为已决项。关键决策（云端 SaaS 优先 / 走云 API / 中文为主 / ≤ 2 小时 / 利润 0 性价比优先）见 [mission.md §8](mission.md)，具体厂商已由 M0 实测锁定，见 [decisions/选型决策记录.md](decisions/选型决策记录.md)。
@@ -16,7 +16,7 @@
 | 层 | 选型 🔶建议 | 说明 |
 | --- | --- | --- |
 | 后端 / 服务 | **Python 3.11+** | AI 生态最全（ASR/LLM/NLP 库丰富） |
-| Web / CLI | Python（FastAPI）或 TypeScript | 后端为 Python 时优先 FastAPI |
+| Web / 服务 | **Python（FastAPI）** ✅ | M1 已落地（异步 API + 极简前端） |
 | 脚本 / 工具 | Bash / Python | FFmpeg 封装、批处理 |
 
 ### A2. 核心处理链路选型
@@ -42,9 +42,10 @@
 
 | 方案 | 说明 | 建议 |
 | --- | --- | --- |
-| 云 ASR 内置说话人分离 | 云 ASR 附带，省事 | ✅ 首选 |
-| **pyannote-audio** | 业界主流开源说话人分离 | 🔶 兜底 |
+| 云 ASR 内置说话人分离 | 腾讯云录音文件识别 `SpeakerDiarization`（结果含 `SpeakerId`） | ✅ **已落地（M2）** |
+| **pyannote-audio** | 业界主流开源说话人分离 | 🔶 兜底（M2 已抽象 `DiarizationProvider`，可选接入，需 HF token） |
 | **whisperX（di-art）** | 对齐 whisper 时间戳 + 说话人 | 🔶 备选 |
+| **占位话者（S1/S2…）** | speaker 缺失时按轮次标记占位 | ✅ 已落地（M2 兜底，保证链路可跑通） |
 
 #### 文本预处理与角色标注
 
@@ -58,7 +59,7 @@
 
 | 方案 | 特点 | 建议 |
 | --- | --- | --- |
-| **DeepSeek-V3（deepseek-chat）** | 中文强、性价比高；单场成本 ¥0.045（M0 实测） | ✅ 已锁定 |
+| **DeepSeek-V4 Pro（deepseek-v4-pro）** | 中文强、Agent 能力增强、1M 上下文；性价比高（M0 实测 V3，2026-08-25 升级 V4 Pro） | ✅ 已锁定 |
 | Qwen（通义千问） | 中文好、性价比高 | 🔶 备选（待密钥，未测） |
 | GLM / Kimi | 国产、长文本友好 | 候选 |
 | GPT-4o / Claude | 通用能力强、成本较高 | 候选（对标外企场景） |
@@ -75,20 +76,20 @@
 | 方案 | 说明 |
 | --- | --- |
 | Markdown（原生）✅ | 纪要主格式（首期交付） |
-| Jinja2 模板 | 模板化渲染 |
+| Jinja2 模板 ✅ | 模板化渲染（M2 已落地三套模板：标准 / 精简 / 详细） |
 | **Pandoc** | MD → PDF / docx（🕐 后期再看） |
 
 ### A3. 基础设施选型
 
 | 模块 | 方案 🔶建议 | 说明 |
 | --- | --- | --- |
-| Web 框架 | **FastAPI** | 异步、类型友好、生态好 |
-| 任务队列 | **Celery + Redis** 或 RQ | 异步长任务调度、重试 |
-| 存储 | S3 兼容对象存储 + PostgreSQL | 原始文件 + 纪要/任务元数据 |
-| 容器化 | **Docker / Docker Compose** | 本地一键起 |
-| 编排（云端） | Kubernetes | Worker 可扩缩 |
-| 可观测 | 结构化日志 + Prometheus + Grafana | 指标与告警 |
-| CI/CD | GitHub Actions | lint → test → build → 镜像发布 |
+| Web 框架 | **FastAPI** ✅ | M1 已落地（异步、类型友好） |
+| 任务队列 | FastAPI BackgroundTasks（M1）→ Celery + Redis（M3） | MVP 用轻量方案；生产级队列留 M3 |
+| 存储 | 本地文件系统 + SQLite（M1/M2）→ S3 + PostgreSQL（M3） | M2 新增 `minutes` / `comments` 表；生产存储留 M3 |
+| 容器化 | **Docker / Docker Compose** ✅ | M1 已落地（本地一键起） |
+| 编排（云端） | Kubernetes | Worker 可扩缩（🕐 M3） |
+| 可观测 | 结构化日志（✅ M1）+ Prometheus + Grafana | 指标 / 告警面板留 M3 |
+| CI/CD | GitHub Actions | lint → test → build → 镜像发布（🕐 M3） |
 
 ### A4. 选型原则
 
@@ -105,8 +106,8 @@
 | 决策点 | 已定方向 | 锁定结论 |
 | --- | --- | --- |
 | ASR 主方案 | ✅ 云 API（接受数据出域） | ✅ **腾讯云 16k_zh**（中英混用最优、批量录音文件识别）；备选阿里云 NLS；本地兜底 faster-whisper |
-| LLM 主方案 | ✅ 性价比高（利润 0） | ✅ **DeepSeek-V3（deepseek-chat）**（纪要质量优秀、单场 ¥0.045）；备选 Qwen（待密钥） |
-| 部署形态 | ✅ 云端 SaaS 优先 | 🕐 云平台选型（K8s / 云托管）留待 M1+ 落地 |
+| LLM 主方案 | ✅ 性价比高（利润 0） | ✅ **DeepSeek-V4 Pro（deepseek-v4-pro）**（纪要质量更优，由 V3 升级）；备选 Qwen（待密钥） |
+| 部署形态 | ✅ 云端 SaaS 优先 | 本地 Docker Compose 已落地（M1）；云端 K8s / 云托管留 M3 |
 
 ---
 
@@ -188,11 +189,11 @@ flowchart TB
 | **audio** | 视频抽音轨、采样率/声道归一化、静音检测 | FFmpeg / pydub |
 | **asr** | 语音转文本、说话人分离、时间戳 | 腾讯云 16k_zh（备选阿里云 NLS） |
 | **nlp** | 文本清洗、分段、角色识别、关键词 | spaCy / 规则 + LLM |
-| **summary** | LLM 纪要生成、模板化 | DeepSeek-chat（备选 Qwen） |
+| **summary** | LLM 纪要生成、模板化 | DeepSeek-V4 Pro（deepseek-v4-pro）（备选 Qwen） |
 | **extractor** | 决议/行动项/负责人/截止时间抽取 | LLM Function-Call / JSON Schema |
 | **render** | 纪要渲染为 Markdown | Markdown / Jinja2（Pandoc 后期） |
-| **orchestrator** | 任务状态机、队列调度、重试 | Celery / 消息队列 |
-| **storage** | 原始文件、中间产物、纪要持久化 | 对象存储 + 关系库 |
+| **orchestrator** | 任务状态机、队列调度、重试 | FastAPI BackgroundTasks（M1）/ Celery（M3） |
+| **storage** | 原始文件、中间产物、纪要持久化 | 本地 FS + SQLite（M1）/ 对象存储 + PostgreSQL（M3） |
 
 **部署形态**
 
@@ -211,7 +212,7 @@ ffmpeg -i input.mp4 -vn -ac 1 -ar 16000 -f wav output.wav
 
 统一 16kHz 单声道；可选静音检测、降噪、AGC。
 
-**③ 语音转文字（ASR）**：抽象 `ASRProvider` 接口，首期接 **腾讯云 16k_zh**（备选阿里云 NLS，本地兜底 faster-whisper）；说话人分离优先用云 ASR 内置能力，pyannote / whisperx 作兜底。
+**③ 语音转文字（ASR）**：抽象 `ASRProvider` 接口，首期接 **腾讯云 16k_zh**（备选阿里云 NLS，本地兜底 faster-whisper）；说话人分离优先用云 ASR 内置能力，pyannote / whisperx 作兜底。长音频按切片逐段识别，`transcribe` 支持 `progress_callback(done, total)` 回调，向任务状态推送「第 x/N 段已完成」切片级进度（本地 whisper 按已处理时长回调）。
 
 **④ 文本预处理与角色标注**：分句、去重、合并碎句；标记说话人；猜测角色。
 
@@ -230,30 +231,36 @@ ffmpeg -i input.mp4 -vn -ac 1 -ar 16000 -f wav output.wav
 
 **数据模型**
 
-| 实体 | 关键字段 |
-| --- | --- |
-| Task | id, source_file, status, progress, created_at, error |
-| Transcript | task_id, segments[]（start/end/speaker/text） |
-| Minute | task_id, title, summary_md, decisions[], actions[], open_questions[] |
+| 实体 | 关键字段 | 状态 |
+| --- | --- | --- |
+| Task | id, source_file, stored_path, status, progress, progress_message, error, audio_duration_min, transcript_chars, cost_rmb, created_at / started_at / finished_at | ✅ M1 已落地（SQLite `tasks` 表；`progress_message` 记录转写切片进度） |
+| Transcript | task_id, segments[]（start/end/text/speaker） | ✅ M2 已落地（`transcript.json` / `.txt`，segment 带 speaker） |
+| Minute | task_id, title, summary_md, decisions[], actions[], open_questions[], speakers[] | ✅ M2 已落地（SQLite `minutes` 表：title / template / summary_md / structured_json / edited_md；`comments` 表：author / text / quote） |
 
 **ER 关系**：`TASK 1—N SEGMENT`；`TASK 1—0..1 MINUTE`；`MINUTE 1—N ACTION / DECISION`。
 
 **RESTful API**
 
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| POST | `/api/tasks` | 上传文件并创建任务 |
-| GET | `/api/tasks/{id}` | 查询任务状态与进度 |
-| GET | `/api/tasks/{id}/transcript` | 获取转写文本 |
-| GET | `/api/tasks/{id}/minute` | 获取生成的纪要 |
-| POST | `/api/tasks/{id}/regen` | 重新生成（换模型/模板） |
-| GET | `/api/minutes` | 纪要历史列表 / 搜索 |
+| 方法 | 路径 | 说明 | 状态 |
+| --- | --- | --- | --- |
+| POST | `/api/tasks` | 上传文件并创建任务（异步执行） | ✅ M1 |
+| GET | `/api/tasks` | 任务列表 | ✅ M1 |
+| GET | `/api/tasks/{id}` | 查询任务状态与进度 | ✅ M1 |
+| GET | `/api/tasks/{id}/transcript` | 获取转写文本 | ✅ M1 |
+| GET | `/api/tasks/{id}/minute` | 获取生成的纪要（编辑后返回编辑内容） | ✅ M2 |
+| PUT | `/api/tasks/{id}/minute` | 保存人工编辑后的纪要 | ✅ M2 |
+| POST | `/api/tasks/{id}/comments` | 新增批注 | ✅ M2 |
+| GET | `/api/tasks/{id}/comments` | 批注列表 | ✅ M2 |
+| DELETE | `/api/tasks/{id}/comments/{comment_id}` | 删除批注 | ✅ M2 |
+| GET | `/api/minutes` | 纪要历史列表 / 搜索（q / from / to / topic） | ✅ M2 |
+| GET | `/health` | 健康检查 | ✅ M1 |
+| POST | `/api/tasks/{id}/regen` | 重新生成（换模型/模板） | 🕐 后期 |
 
 ### B5. 测试策略
 
 | 层级 | 重点 | 手段 |
 | --- | --- | --- |
-| 单元测试 | 纯逻辑、提示词解析、字段校验 | pytest / jest |
+| 单元测试 | 纯逻辑、提示词解析、字段校验 | pytest（✅ M1 已用，覆盖率 78% → M2 82%） |
 | 集成测试 | 音频→ASR→LLM 全链路 | 真实样例 + mock provider |
 | 评测集 (Eval Set) | 纪要质量、行动项准确率 | 人工标注黄金基准集 |
 | 性能测试 | 大文件、长会议、高并发 | Locust / k6 |
@@ -263,10 +270,10 @@ ffmpeg -i input.mp4 -vn -ac 1 -ar 16000 -f wav output.wav
 
 ### B6. 部署与运维
 
-- **CI/CD**：GitHub Actions（lint → test → build → 镜像发布）。
-- **容器化**：Docker Compose 本地一键起；K8s 云端集群。
-- **可观测**：结构化日志（JSON）、指标（转写时长/错误率/成本）、告警。
-- **安全合规**：加密存储、TLS、鉴权；本地化部署留作后期选项。
+- **容器化**：Docker Compose 本地一键起（✅ M1 已落地）；K8s 云端集群留 M3。
+- **CI/CD**：GitHub Actions（lint → test → build → 镜像发布）—— 🕐 M3。
+- **可观测**：结构化日志（JSON，✅ M1 已落地 `JsonFormatter`）；指标 / 告警面板留 M3。
+- **安全合规**：加密存储、TLS、鉴权（🕐 M3）；本地化部署留作后期选项。
 
 ---
 
