@@ -23,6 +23,7 @@
 -->
 
 ### 新增
+- 新增 M3 生产化任务准备（plan / requirements / validation 三文档）：云端部署（腾讯云服务器 + Docker Compose 单机多服务，Worker 独立容器预留扩缩）、生产存储（PostgreSQL + MinIO，S3 兼容预留迁 COS）、自建账号体系基础版（注册/登录 + JWT）、Prometheus + Grafana 可观测、CI/CD、成本监控、灰度上线（42a77f6）
 - 实现 M2 结构化 Schema 与数据模型：`ActionItem / Decision / OpenQuestion / StructuredMinute`（`app/schemas.py`，含 Function-Calling JSON Schema）+ `Segment.speaker` / `Transcript.speakers` + SQLite `minutes` / `comments` 表（4e9351c）
 - 实现 M2 行动项抽取 `app/extractor.py`：DeepSeek-V4 Pro 走 Function-Calling（`extract_decisions/actions/questions` tool_schema）+ 本地规则兜底（负责人/截止/待办正则，无密钥可跑通）（4e9351c）
 - 实现 M2 说话人分离 `app/diarization.py` 与角色识别 `app/role.py`：腾讯云 `SpeakerDiarization` 内置 + pyannote 兜底 + 占位 S1/S2；主持人/汇报人/参会者（规则 + LLM 辅助）（4e9351c）
