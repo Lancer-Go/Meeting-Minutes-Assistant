@@ -1,0 +1,15 @@
+{
+  "task_id": "seed-002",
+  "title": "技术周例会",
+  "note": "种子样例（待人工复核），用于验证评测脚本；不作为最终指标依据。",
+  "actions": [
+    {"description": "排查线上偶发超时", "owner": "赵六", "due": "明天", "priority": "高", "status": "待办"},
+    {"description": "补充接口文档", "owner": "待定", "due": "待定", "priority": "中", "status": "待办"}
+  ],
+  "speaker_segments": [
+    {"start": 0.0, "end": 8.0, "speaker": "S1"},
+    {"start": 8.0, "end": 16.0, "speaker": "S2"},
+    {"start": 16.0, "end": 24.0, "speaker": "S3"}
+  ],
+  "minutes_md": "# 技术周例会\n\n## 核心决议\n- 本周集中排查稳定性问题\n\n## 行动项\n| 事项 | 负责人 | 截止时间 |\n| --- | --- | --- |\n| 排查线上偶发超时 | 赵六 | 明天 |\n"
+}

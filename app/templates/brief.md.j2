@@ -1,0 +1,12 @@
+# {{ minute.title or meta.get('title') or '会议纪要' }}
+
+## 核心决议
+{% if minute.decisions %}{% for d in minute.decisions %}- **{{ d.conclusion }}**{% if d.basis %}（依据：{{ d.basis }}）{% endif %}
+{% endfor %}{% else %}- （无）
+{% endif %}
+## 行动项一览
+{% if minute.actions %}| 事项 | 负责人 | 截止时间 |
+| --- | --- | --- |
+{% for a in minute.actions %}| {{ a.description }} | {{ a.owner or '待定' }} | {{ a.due or '待定' }} |
+{% endfor %}{% else %}（无）
+{% endif %}

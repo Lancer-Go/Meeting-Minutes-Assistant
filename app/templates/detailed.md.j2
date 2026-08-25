@@ -1,0 +1,36 @@
+# {{ minute.title or meta.get('title') or '会议纪要' }}
+
+## 会议信息
+{% if meta.get('created_at') %}- 生成时间：{{ meta.get('created_at') }}
+{% endif %}{% if meta.get('duration_min') is not none %}- 会议时长：约 {{ '%.1f'|format(meta.get('duration_min')) }} 分钟
+{% endif %}{% if meta.get('asr') %}- 转写引擎：{{ meta.get('asr') }}
+{% endif %}
+## 说话人 / 角色
+{% if minute.speakers %}| 说话人 | 角色 |
+| --- | --- |
+{% for s in minute.speakers %}| {{ s.name }} | {{ s.role }} |
+{% endfor %}{% else %}- （无）
+{% endif %}
+## 核心决议
+{% if minute.decisions %}{% for d in minute.decisions %}- **{{ d.conclusion }}**{% if d.basis %}（依据：{{ d.basis }}）{% endif %}
+{% endfor %}{% else %}- （无）
+{% endif %}
+## 讨论要点
+{{ minute.summary_md or '（无）' }}
+
+## 行动项
+{% if minute.actions %}| 事项 | 负责人 | 截止时间 | 优先级 | 状态 |
+| --- | --- | --- | --- | --- |
+{% for a in minute.actions %}| {{ a.description }} | {{ a.owner or '待定' }} | {{ a.due or '待定' }} | {{ a.priority or '中' }} | {{ a.status or '待办' }} |
+{% endfor %}{% else %}（无）
+{% endif %}
+## 未决问题
+{% if minute.open_questions %}{% for q in minute.open_questions %}- {{ q.question }}{% if q.follow_up %}（待跟进：{{ q.follow_up }}）{% endif %}
+{% endfor %}{% else %}- （无）
+{% endif %}
+## 全文转写附录
+{% if transcript_text %}```text
+{{ transcript_text }}
+```
+{% else %}（无转写文本）
+{% endif %}

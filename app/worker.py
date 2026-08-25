@@ -17,6 +17,20 @@ MAX_RETRIES = 3
 RETRY_BACKOFF_S = [1.0, 2.0, 4.0]
 
 
+def _persist_minute(task_id: str, out_dir: Path, title: str) -> None:
+    """读取 pipeline 产物，持久化结构化纪要到 minutes 表（TG-0/TG-5）。"""
+    try:
+        import json
+        sm_path = out_dir / "structured_minute.json"
+        structured_json = sm_path.read_text(encoding="utf-8") if sm_path.exists() else "{}"
+        md_path = out_dir / "minutes.md"
+        summary_md = md_path.read_text(encoding="utf-8") if md_path.exists() else ""
+        db.save_minute(task_id, title=title, template=config.DEFAULT_TEMPLATE,
+                       summary_md=summary_md, structured_json=structured_json)
+    except Exception:  # noqa: BLE001 — 持久化失败不影响任务成功状态
+        logger.exception("task=%s 持久化纪要失败（不阻断任务）", task_id)
+
+
 def run_task(task_id: str) -> None:
     """后台执行单个任务的完整链路（含重试）。"""
     task = db.get_task(task_id)
@@ -52,6 +66,8 @@ def run_task(task_id: str) -> None:
                 transcript_chars=metrics.get("transcript_chars"),
                 cost_rmb=metrics.get("total_cost_rmb"),
             )
+            # M2：持久化结构化纪要（minutes 表），供编辑 / 检索 / 评测使用
+            _persist_minute(task_id, out_dir, title)
             db.set_progress(task_id, 100, "完成")
             db.set_status(task_id, db.SUCCEEDED)
             logger.info("task=%s 成功 cost=¥%s", task_id, metrics.get("total_cost_rmb"))

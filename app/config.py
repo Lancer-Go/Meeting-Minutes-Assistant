@@ -55,9 +55,15 @@ WHISPER_MODEL = os.getenv("MMA_WHISPER_MODEL", "base")   # tiny/base/small/mediu
 LLM_MAX_CHARS = int(os.getenv("MMA_LLM_MAX_CHARS", "12000"))  # Map-Reduce 分块阈值（字符）
 DEEPSEEK_MODEL = os.getenv("MMA_DEEPSEEK_MODEL", "deepseek-v4-pro")  # LLM 主用模型（DeepSeek-V4 Pro）
 
+# --------------------------------------------------------------------------- M2 结构化增强
+DEFAULT_EXTRACTOR = os.getenv("MMA_EXTRACTOR", "deepseek")      # deepseek | rule
+DEFAULT_DIARIZATION = os.getenv("MMA_DIARIZATION", "placeholder")  # pyannote | placeholder
+DEFAULT_TEMPLATE = os.getenv("MMA_TEMPLATE", "standard")        # standard | brief | detailed
+
 # 云端密钥缺失时的离线降级（validation.md 判定规则）
 ASR_FALLBACK = "whisper"
 LLM_FALLBACK = "extractive"
+EXTRACTOR_FALLBACK = "rule"
 
 # --------------------------------------------------------------------------- 腾讯云切片
 # 录音文件识别 base64 ≤5MB（≈2min 16kHz WAV），长音频按此切片逐段识别再合并。

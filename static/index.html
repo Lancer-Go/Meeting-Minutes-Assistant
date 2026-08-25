@@ -58,6 +58,10 @@
 
   <h2>任务历史</h2>
   <ul id="history"></ul>
+
+  <h2>纪要检索</h2>
+  <input type="search" id="search" placeholder="按关键词 / 主题搜索历史纪要…" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--card);">
+  <ul id="searchResults" style="margin-top:8px;"></ul>
 </main>
 
 <script>
@@ -139,7 +143,9 @@ async function loadHistory() {
       const li = document.createElement('li');
       li.innerHTML = `<span>${escapeHtml(t.source_file)}</span>` +
         `<span class="tag ${t.status}">${STATUS_TEXT[t.status] || t.status}</span>` +
-        (t.status === 'succeeded' ? ` <a href="/api/tasks/${t.id}/minute" download>纪要</a>` : '');
+        (t.status === 'succeeded'
+          ? ` <a href="/api/tasks/${t.id}/minute" download>下载</a> <a href="/minute.html?id=${t.id}">编辑</a>`
+          : '');
       ul.appendChild(li);
     });
   } catch (e) { /* 忽略 */ }
@@ -149,6 +155,31 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+async function searchMinutes(q) {
+  const ul = $('searchResults');
+  if (!q) { ul.innerHTML = ''; return; }
+  try {
+    const resp = await fetch('/api/minutes?q=' + encodeURIComponent(q));
+    const rows = await resp.json();
+    ul.innerHTML = '';
+    if (!rows.length) {
+      const li = document.createElement('li');
+      li.textContent = '无匹配纪要';
+      ul.appendChild(li);
+      return;
+    }
+    rows.forEach((m) => {
+      const li = document.createElement('li');
+      li.innerHTML = `<span>${escapeHtml(m.title || m.task_id)}</span>` +
+        `<span class="tag succeeded">${escapeHtml(m.template || 'standard')}</span>` +
+        ` <a href="/minute.html?id=${m.task_id}">打开</a>` +
+        `<br><small style="color:var(--muted)">更新于 ${escapeHtml(m.updated_at || '')}</small>`;
+      ul.appendChild(li);
+    });
+  } catch (e) { /* 忽略 */ }
+}
+
+$('search').addEventListener('input', (e) => searchMinutes(e.target.value));
 $('uploadBtn').addEventListener('click', upload);
 loadHistory();
 </script>

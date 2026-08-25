@@ -2,7 +2,7 @@
 
 将会议录音/录像自动转写为文字，并生成结构化 Markdown 会议纪要。
 
-> 当前进度：**M1 · MVP（可用闭环 · 云 API）** —— FastAPI 服务 + 异步全链路，无技术背景用户可自助「上传 → 得到纪要」。
+> 当前进度：**M2 · 结构增强（纪要质量）** —— 结构化行动项抽取、说话人/角色标注、三模板渲染、编辑批注与历史检索。
 > 选型已锁定（M0 实测）：ASR 腾讯云 16k_zh / LLM DeepSeek-V4 Pro（deepseek-v4-pro，由 V3 升级）。详见 `specs/` 与 `docs/roadmap.md`。
 
 ## 快速开始（服务模式）
@@ -35,7 +35,12 @@ docker compose up --build
 | GET | `/api/tasks` | 任务列表 |
 | GET | `/api/tasks/{id}` | 任务状态与进度 |
 | GET | `/api/tasks/{id}/transcript` | 转写文本下载 |
-| GET | `/api/tasks/{id}/minute` | 纪要 Markdown 下载 |
+| GET | `/api/tasks/{id}/minute` | 纪要 Markdown 下载（编辑后返回编辑内容） |
+| PUT | `/api/tasks/{id}/minute` | 保存人工编辑后的纪要（`{"markdown": "..."}`） |
+| POST | `/api/tasks/{id}/comments` | 新增批注（`{"text","author","quote"}`） |
+| GET | `/api/tasks/{id}/comments` | 批注列表 |
+| DELETE | `/api/tasks/{id}/comments/{comment_id}` | 删除批注 |
+| GET | `/api/minutes` | 纪要历史列表 / 搜索（`q` / `from` / `to` / `topic`） |
 | GET | `/health` | 健康检查 |
 
 - 支持格式：MP4 / MKV / WAV / MP3 / M4A，单场 ≤ 2 小时。
@@ -55,11 +60,34 @@ docker compose up --build
 | TG-6 前端 | `static/index.html` | 上传页 + 进度 + 下载 |
 | TG-7 容错 | `app/worker.py` + `app/main.py` | 重试 + 结构化日志 |
 
+## 任务组（M2）
+
+| 任务组 | 模块 | 说明 |
+| --- | --- | --- |
+| TG-0 结构化 Schema | `app/schemas.py` + `app/db.py` + `app/asr.py` | `ActionItem / Decision / OpenQuestion / StructuredMinute`；`Segment.speaker`；`minutes` / `comments` 表 |
+| TG-1 行动项抽取 | `app/extractor.py` | Function-Calling 抽取（DeepSeek）+ 规则兜底（无密钥可跑通） |
+| TG-2 说话人分离 | `app/diarization.py` + `app/asr.py` | 腾讯云 `SpeakerDiarization` 内置 + pyannote 兜底 + 占位 S1/S2 |
+| TG-3 角色识别 | `app/role.py` | 主持人 / 汇报人 / 参会者（规则 + LLM 辅助） |
+| TG-4 三模板 | `app/render.py` + `app/templates/` | Jinja2 标准 / 精简 / 详细 |
+| TG-5 编辑批注 | `app/main.py` + `static/minute.html` | 编辑 / 批注接口 + 前端 + 持久化 |
+| TG-6 历史检索 | `app/main.py` + `static/index.html` | `GET /api/minutes`（关键词 / 时间 / 主题） |
+| TG-7 Eval 集 | `eval/` | 黄金基准集 + 评测脚本 + 三项指标 |
+
 ## 测试
 
 ```bash
 ./venv/Scripts/python.exe -m pytest tests/ --cov=app
 ```
+
+## 质量评测（Eval，M2）
+
+```bash
+# 演示评测流程（种子样例）：生成 predicted 产物 → 跑评测脚本
+./venv/Scripts/python.exe -m eval.make_seed_predicted --task-dir <目录>
+./venv/Scripts/python.exe -m eval.eval_quality --golden-dir eval/golden --task-dir <目录>
+```
+
+真实评测需人工标注黄金基准（`eval/golden/*.json`），跑通 pipeline 后对比。详见 `eval/README.md`。
 
 ## 离线 CLI（M0 遗留，链路验证用）
 
@@ -70,9 +98,10 @@ docker compose up --build
 ## 目录结构
 
 ```
-app/             # M1 服务包（config / audio / asr / summary / render / pipeline / ingestion / db / worker / main）
-static/          # 极简前端（index.html）
-tests/           # 单元与集成测试（覆盖率 ≥ 70%）
+app/             # M1/M2 服务包（config / audio / asr / summary / render / pipeline / ingestion / db / worker / main / schemas / extractor / diarization / role + templates/）
+static/          # 前端（index.html + minute.html 编辑页）
+tests/           # 单元与集成测试（覆盖率 ≥ 70%，M2 82%）
+eval/            # M2 质量评测（黄金基准集 + 评测脚本 + 指标）
 Dockerfile / docker-compose.yml   # 容器化交付
 audio.py / asr.py / summarize.py / pipeline.py / eval_cer.py / make_sample.py  # M0 脚本（离线 CLI）
 config.py        # M0 集中配置（根）；服务配置见 app/config.py

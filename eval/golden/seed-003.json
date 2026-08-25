@@ -1,0 +1,14 @@
+{
+  "task_id": "seed-003",
+  "title": "季度目标对齐会",
+  "note": "种子样例（待人工复核），用于验证评测脚本；不作为最终指标依据。",
+  "actions": [
+    {"description": "制定 Q3 收入目标拆解", "owner": "钱七", "due": "下周五", "priority": "高", "status": "待办"},
+    {"description": "整理客户反馈清单", "owner": "孙八", "due": "下周二", "priority": "中", "status": "待办"}
+  ],
+  "speaker_segments": [
+    {"start": 0.0, "end": 10.0, "speaker": "S1"},
+    {"start": 10.0, "end": 20.0, "speaker": "S2"}
+  ],
+  "minutes_md": "# 季度目标对齐会\n\n## 核心决议\n- 明确 Q3 重点为收入增长与客户留存\n\n## 行动项\n| 事项 | 负责人 | 截止时间 |\n| --- | --- | --- |\n| 制定 Q3 收入目标拆解 | 钱七 | 下周五 |\n| 整理客户反馈清单 | 孙八 | 下周二 |\n"
+}

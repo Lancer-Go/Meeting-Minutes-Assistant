@@ -2,7 +2,7 @@
 
 | 文档类型 | 技术栈与技术设计 |
 | --- | --- |
-| 版本 / 状态 | v0.5（M1 MVP 已落地；LLM 主方案升级 DeepSeek-V4 Pro + 转写切片进度）✅ |
+| 版本 / 状态 | v0.6（M2 结构增强已落地：结构化抽取 / 说话人 / 角色 / 三模板 / 编辑检索 / Eval 集）✅ |
 | 关联文档 | [mission](mission.md) · [roadmap](roadmap.md) · [选型决策记录](decisions/选型决策记录.md) |
 
 > 说明：本文汇总技术选型（Part A）与技术设计（Part B：需求、架构、方案、数据、测试、部署）。标记 🔶【建议】为倾向方案，✅【已定】为已决项。关键决策（云端 SaaS 优先 / 走云 API / 中文为主 / ≤ 2 小时 / 利润 0 性价比优先）见 [mission.md §8](mission.md)，具体厂商已由 M0 实测锁定，见 [decisions/选型决策记录.md](decisions/选型决策记录.md)。
@@ -42,9 +42,10 @@
 
 | 方案 | 说明 | 建议 |
 | --- | --- | --- |
-| 云 ASR 内置说话人分离 | 云 ASR 附带，省事 | ✅ 首选 |
-| **pyannote-audio** | 业界主流开源说话人分离 | 🔶 兜底 |
+| 云 ASR 内置说话人分离 | 腾讯云录音文件识别 `SpeakerDiarization`（结果含 `SpeakerId`） | ✅ **已落地（M2）** |
+| **pyannote-audio** | 业界主流开源说话人分离 | 🔶 兜底（M2 已抽象 `DiarizationProvider`，可选接入，需 HF token） |
 | **whisperX（di-art）** | 对齐 whisper 时间戳 + 说话人 | 🔶 备选 |
+| **占位话者（S1/S2…）** | speaker 缺失时按轮次标记占位 | ✅ 已落地（M2 兜底，保证链路可跑通） |
 
 #### 文本预处理与角色标注
 
@@ -75,7 +76,7 @@
 | 方案 | 说明 |
 | --- | --- |
 | Markdown（原生）✅ | 纪要主格式（首期交付） |
-| Jinja2 模板 | 模板化渲染 |
+| Jinja2 模板 ✅ | 模板化渲染（M2 已落地三套模板：标准 / 精简 / 详细） |
 | **Pandoc** | MD → PDF / docx（🕐 后期再看） |
 
 ### A3. 基础设施选型
@@ -84,7 +85,7 @@
 | --- | --- | --- |
 | Web 框架 | **FastAPI** ✅ | M1 已落地（异步、类型友好） |
 | 任务队列 | FastAPI BackgroundTasks（M1）→ Celery + Redis（M3） | MVP 用轻量方案；生产级队列留 M3 |
-| 存储 | 本地文件系统 + SQLite（M1）→ S3 + PostgreSQL（M3） | MVP 足够；生产存储留 M3 |
+| 存储 | 本地文件系统 + SQLite（M1/M2）→ S3 + PostgreSQL（M3） | M2 新增 `minutes` / `comments` 表；生产存储留 M3 |
 | 容器化 | **Docker / Docker Compose** ✅ | M1 已落地（本地一键起） |
 | 编排（云端） | Kubernetes | Worker 可扩缩（🕐 M3） |
 | 可观测 | 结构化日志（✅ M1）+ Prometheus + Grafana | 指标 / 告警面板留 M3 |
@@ -233,8 +234,8 @@ ffmpeg -i input.mp4 -vn -ac 1 -ar 16000 -f wav output.wav
 | 实体 | 关键字段 | 状态 |
 | --- | --- | --- |
 | Task | id, source_file, stored_path, status, progress, progress_message, error, audio_duration_min, transcript_chars, cost_rmb, created_at / started_at / finished_at | ✅ M1 已落地（SQLite `tasks` 表；`progress_message` 记录转写切片进度） |
-| Transcript | task_id, segments[]（start/end/text） | ✅ M1 已落地（`transcript.json` / `.txt`） |
-| Minute | task_id, title, summary_md, decisions[], actions[], open_questions[], speakers[] | 🔶 M2 扩展（结构化 + speaker） |
+| Transcript | task_id, segments[]（start/end/text/speaker） | ✅ M2 已落地（`transcript.json` / `.txt`，segment 带 speaker） |
+| Minute | task_id, title, summary_md, decisions[], actions[], open_questions[], speakers[] | ✅ M2 已落地（SQLite `minutes` 表：title / template / summary_md / structured_json / edited_md；`comments` 表：author / text / quote） |
 
 **ER 关系**：`TASK 1—N SEGMENT`；`TASK 1—0..1 MINUTE`；`MINUTE 1—N ACTION / DECISION`。
 
@@ -246,16 +247,20 @@ ffmpeg -i input.mp4 -vn -ac 1 -ar 16000 -f wav output.wav
 | GET | `/api/tasks` | 任务列表 | ✅ M1 |
 | GET | `/api/tasks/{id}` | 查询任务状态与进度 | ✅ M1 |
 | GET | `/api/tasks/{id}/transcript` | 获取转写文本 | ✅ M1 |
-| GET | `/api/tasks/{id}/minute` | 获取生成的纪要 | ✅ M1 |
+| GET | `/api/tasks/{id}/minute` | 获取生成的纪要（编辑后返回编辑内容） | ✅ M2 |
+| PUT | `/api/tasks/{id}/minute` | 保存人工编辑后的纪要 | ✅ M2 |
+| POST | `/api/tasks/{id}/comments` | 新增批注 | ✅ M2 |
+| GET | `/api/tasks/{id}/comments` | 批注列表 | ✅ M2 |
+| DELETE | `/api/tasks/{id}/comments/{comment_id}` | 删除批注 | ✅ M2 |
+| GET | `/api/minutes` | 纪要历史列表 / 搜索（q / from / to / topic） | ✅ M2 |
 | GET | `/health` | 健康检查 | ✅ M1 |
 | POST | `/api/tasks/{id}/regen` | 重新生成（换模型/模板） | 🕐 后期 |
-| GET | `/api/minutes` | 纪要历史列表 / 搜索 | 🔶 M2 |
 
 ### B5. 测试策略
 
 | 层级 | 重点 | 手段 |
 | --- | --- | --- |
-| 单元测试 | 纯逻辑、提示词解析、字段校验 | pytest（✅ M1 已用，覆盖率 78%） |
+| 单元测试 | 纯逻辑、提示词解析、字段校验 | pytest（✅ M1 已用，覆盖率 78% → M2 82%） |
 | 集成测试 | 音频→ASR→LLM 全链路 | 真实样例 + mock provider |
 | 评测集 (Eval Set) | 纪要质量、行动项准确率 | 人工标注黄金基准集 |
 | 性能测试 | 大文件、长会议、高并发 | Locust / k6 |
