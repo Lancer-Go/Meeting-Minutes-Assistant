@@ -23,6 +23,7 @@
 -->
 
 ### 新增
+- 转写阶段按切片推进进度「第 x/N 段已完成」：`ASRProvider.transcribe` 增加 progress_callback（腾讯云逐段回调、本地 whisper 按已处理时长），`tasks` 表新增 progress_message 列（含旧库迁移），前端状态行展示进度说明（2a7c296）
 - 新增 M2 结构增强任务准备（plan / requirements / validation 三文档）（9f7040e）
 - 实现 M1 MVP：FastAPI 服务 + 异步全链路（app/ 包 TG-0~TG-7：上传校验/音频提取/腾讯云切片转写/DeepSeek 纪要/Markdown 导出/任务状态机/极简前端/重试与结构化日志），含 Docker Compose 一键启动与单测覆盖率 78%（9b99e1e）
 - 新增 M1 MVP 任务准备（plan / requirements / validation 三文档）（042548b）
@@ -32,6 +33,7 @@
 - 接入云 ASR 实测：阿里云 NLS 实时语音转写 + 腾讯云录音文件识别（b3499f0）
 
 ### 变更
+- LLM 主方案由 DeepSeek-V3（deepseek-chat）升级为 DeepSeek-V4 Pro（deepseek-v4-pro，新增 `MMA_DEEPSEEK_MODEL` 配置项）提升会议总结质量；同步更新 tech-stack v0.5、选型决策记录、roadmap 与 M0-M2 specs（2a7c296）
 - 阶段执行文档目录迁移至 specs/ 下（3e1f442）
 - 用真实会议（80min）完成三家 ASR 对比与 DeepSeek 端到端纪要，锁定选型（ASR 腾讯云 16k_zh / LLM DeepSeek-chat），回填《选型决策记录》（b3499f0）
 
