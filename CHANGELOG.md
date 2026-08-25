@@ -47,6 +47,7 @@
 - 用真实会议（80min）完成三家 ASR 对比与 DeepSeek 端到端纪要，锁定选型（ASR 腾讯云 16k_zh / LLM DeepSeek-chat），回填《选型决策记录》（b3499f0）
 
 ### 文档
+- tech-stack 更新至 v0.7，新增 A6「成本模型与计费参考」：DeepSeek 2026-08 官方价格表（V4 Pro / Flash / Vision-Exp，含高峰/空闲与缓存命中价）、扣费规则、V4 Pro 单场成本估算（推算 ≈ ¥0.2~0.8/场·空闲，标注假设待 M3 重测）、flash 降本备选；选型决策记录补 V4 Pro 价格备注（5e774e8）
 - tech-stack 更新至 v0.6，回填 M2 实际选型（Jinja2 三模板 / 腾讯云 SpeakerDiarization / 占位话者兜底 / minutes-comments 表 / M2 REST 路由 / 覆盖率 82%）；roadmap「下一步」由推进 M2 更正为推进 M3；README 补充 M2 任务组与 Eval 用法（4e9351c）
 - tech-stack 更新至 v0.4，回填 M1 实际选型（FastAPI / BackgroundTasks / SQLite+本地FS / Docker Compose 落地；B4 数据模型与 REST API 对齐 M1 实现）；roadmap「下一步」由启动 M0 更正为推进 M2（0c13169）
 - tech-stack 更新至 v0.3，回填 M0 实测锁定厂商（ASR 腾讯云 16k_zh / LLM DeepSeek-chat），关联《选型决策记录》（a2ada36）
