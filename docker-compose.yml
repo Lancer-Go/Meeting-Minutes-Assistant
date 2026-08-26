@@ -26,6 +26,7 @@ services:
       S3_BUCKET: ${S3_BUCKET:-mma}
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
       S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
+      S3_SSE_ENABLED: ${S3_SSE_ENABLED:-false}   # 本地 MinIO 无 KES，关闭 SSE；生产 COS/S3 设 true
       JWT_SECRET: ${JWT_SECRET:-dev-insecure-secret-change-me-in-production}
       AES_KEY: ${AES_KEY:-}
       COST_LIMIT_DAILY_RMB: ${COST_LIMIT_DAILY_RMB:-5.0}

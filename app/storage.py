@@ -55,9 +55,13 @@ class Storage:
         key = key.lstrip("/")
         if self.s3:
             self._ensure_bucket()
-            self._s3_client().upload_file(
-                str(local_path), self.bucket, key,
-                ExtraArgs={"ServerSideEncryption": "AES256"})
+            if config.S3_SSE_ENABLED:
+                self._s3_client().upload_file(
+                    str(local_path), self.bucket, key,
+                    ExtraArgs={"ServerSideEncryption": "AES256"})
+            else:
+                self._s3_client().upload_file(
+                    str(local_path), self.bucket, key)
         else:
             dst = config.DATA_DIR / key
             dst.parent.mkdir(parents=True, exist_ok=True)
@@ -68,9 +72,10 @@ class Storage:
         key = key.lstrip("/")
         if self.s3:
             self._ensure_bucket()
-            self._s3_client().put_object(
-                Bucket=self.bucket, Key=key, Body=data,
-                ServerSideEncryption="AES256")
+            kwargs = {"Bucket": self.bucket, "Key": key, "Body": data}
+            if config.S3_SSE_ENABLED:
+                kwargs["ServerSideEncryption"] = "AES256"
+            self._s3_client().put_object(**kwargs)
         else:
             path = config.DATA_DIR / key
             path.parent.mkdir(parents=True, exist_ok=True)

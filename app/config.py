@@ -83,6 +83,9 @@ S3_BUCKET = os.getenv("S3_BUCKET", "mma")
 S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY", "")
 S3_SECRET_KEY = os.getenv("S3_SECRET_KEY", "")
 S3_REGION = os.getenv("S3_REGION", "us-east-1")
+# 服务端加密（SSE-AES256，TG-4 加密存储）：生产 COS/S3 开启；本地 MinIO 无 KES(KMS) 时须关闭，
+# 否则 boto3 上传报 "KMS is not configured"。本地 compose 默认已设 false。
+S3_SSE_ENABLED = _bool("S3_SSE_ENABLED", "true")
 
 # --------------------------------------------------------------------------- M3 · 队列（TG-0）
 # Celery + Redis 生产队列；本地开发默认关闭，回退 FastAPI BackgroundTasks（不破坏 M1/M2 体验）。
