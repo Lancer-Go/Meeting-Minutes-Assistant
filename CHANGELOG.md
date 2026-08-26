@@ -45,6 +45,7 @@
 - 接入云 ASR 实测：阿里云 NLS 实时语音转写 + 腾讯云录音文件识别（b3499f0）
 
 ### 变更
+- `Dockerfile` 的 apt/pip 源切换为阿里云国内镜像（`mirrors.aliyun.com`），修复 Docker 构建流量走 Clash 代理（fake-ip）拉取 deb.debian.org 被 502 导致 `apt-get install` 失败的问题（e0faa88）
 - `db` 由标准库 sqlite3 迁移为 SQLAlchemy 双模式（sqlite/postgresql），新增 users/audit_logs/cost_stats 表与 tasks.user_id 越权隔离（369c8a6）
 - `worker` 由 BackgroundTasks 直调改为 Celery + Redis 队列（`MMA_USE_CELERY` 开关，本地开发回退），输入/产物走 storage 层（S3 / 本地 FS），成功后落 cost_stats（369c8a6）
 - `main` 新增 `POST /api/auth/register|login`、`GET /api/costs`、`GET /metrics`；既有业务路由全部加鉴权依赖与 user_id 过滤（369c8a6）
