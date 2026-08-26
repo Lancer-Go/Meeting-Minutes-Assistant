@@ -1,4 +1,4 @@
-"""M1 MVP 服务集中配置。
+"""M1 MVP 服务集中配置；M3 生产化扩展（存储 / 队列 / 鉴权 / 加密 / 成本 / 可观测）。
 
 从环境变量 / 项目根目录 `.env` 读取密钥、Provider 选择与服务参数。
 与 M0 的根目录 `config.py` 独立：本文件供 `app` 包（服务层）使用，M0 CLI 脚本仍用根 config.py。
@@ -12,6 +12,11 @@ from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent.parent  # 项目根目录
 load_dotenv(ROOT / ".env")
+
+
+def _bool(name: str, default: str = "false") -> bool:
+    return os.getenv(name, default).strip().lower() in ("1", "true", "yes", "on")
+
 
 # --------------------------------------------------------------------------- 目录
 DATA_DIR = Path(os.getenv("MMA_DATA_DIR", str(ROOT / "data")))
@@ -68,3 +73,40 @@ EXTRACTOR_FALLBACK = "rule"
 # --------------------------------------------------------------------------- 腾讯云切片
 # 录音文件识别 base64 ≤5MB（≈2min 16kHz WAV），长音频按此切片逐段识别再合并。
 ASR_CHUNK_SECONDS = float(os.getenv("MMA_ASR_CHUNK_SECONDS", "100"))
+
+# --------------------------------------------------------------------------- M3 · 存储（TG-2）
+# DATABASE_URL 驱动 SQLAlchemy：空 = 沿用 SQLite DB_PATH（本地开发）；postgresql:// 生产。
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+# 对象存储：S3_ENDPOINT 为空时用本地 FS 兜底（stored_path 存对象键 / 相对路径）。
+S3_ENDPOINT = os.getenv("S3_ENDPOINT", "")
+S3_BUCKET = os.getenv("S3_BUCKET", "mma")
+S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY", "")
+S3_SECRET_KEY = os.getenv("S3_SECRET_KEY", "")
+S3_REGION = os.getenv("S3_REGION", "us-east-1")
+
+# --------------------------------------------------------------------------- M3 · 队列（TG-0）
+# Celery + Redis 生产队列；本地开发默认关闭，回退 FastAPI BackgroundTasks（不破坏 M1/M2 体验）。
+USE_CELERY = _bool("MMA_USE_CELERY", "false")
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+CELERY_TASK_NAME = "app.celery_app.process_task"
+
+# --------------------------------------------------------------------------- M3 · 鉴权（TG-4）
+# 自建账号体系基础版：注册 / 登录 + JWT（PyJWT HS256）。AUTH_ENABLED=False 时业务接口免鉴权（本地开发/测试）。
+AUTH_ENABLED = _bool("MMA_AUTH_ENABLED", "true")
+# ⚠️ 生产必须用 `JWT_SECRET` 环境变量覆盖此开发默认值（HS256 建议 ≥ 32 字节）。
+JWT_SECRET = os.getenv("JWT_SECRET", "dev-insecure-secret-change-me-in-production")
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", str(7 * 24 * 60)))  # 默认 7 天
+PASSWORD_BCRYPT_ROUNDS = int(os.getenv("PASSWORD_BCRYPT_ROUNDS", "12"))
+
+# --------------------------------------------------------------------------- M3 · 加密（TG-4）
+# AES-256-GCM 应用层加密（敏感字段/纪要内容）。空则从 JWT_SECRET 派生（开发默认）。
+AES_KEY = os.getenv("AES_KEY", "")
+
+# --------------------------------------------------------------------------- M3 · 成本（TG-6）
+COST_LIMIT_DAILY_RMB = float(os.getenv("COST_LIMIT_DAILY_RMB", "5.0"))       # 日成本限额
+COST_LIMIT_PER_TASK_RMB = float(os.getenv("COST_LIMIT_PER_TASK_RMB", "1.0"))  # 单场超预算阈值
+COST_AUTO_PAUSE = _bool("COST_AUTO_PAUSE", "false")                          # 超限自动暂停新任务（默认关闭）
+
+# --------------------------------------------------------------------------- M3 · 可观测（TG-3）
+METRICS_ENABLED = _bool("MMA_METRICS_ENABLED", "true")

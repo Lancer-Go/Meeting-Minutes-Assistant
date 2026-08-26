@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 
 from app.asr import Segment
-from app.schemas import ROLE_HOST, ROLE_PRESENTER, ROLE_PARTICIPANT, Speaker
+from app.schemas import ROLE_HOST, ROLE_PARTICIPANT, ROLE_PRESENTER, Speaker
 
 # 汇报人提示句式
 _PRESENTER_RE = re.compile(r"(下面|接下来)?(请|由|我)?(给?大家)?(汇报|介绍|说明|讲解)")

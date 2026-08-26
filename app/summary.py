@@ -7,10 +7,10 @@ from __future__ import annotations
 
 import time
 from abc import ABC, abstractmethod
-from pathlib import Path
 
 from app import config
 from app.asr import Transcript
+from app.security import guard_prompt
 
 SYSTEM_PROMPT = (
     "你是会议纪要助手。请根据下面的会议转写内容生成结构化会议纪要，用中文输出 Markdown，包含：\n"
@@ -46,8 +46,27 @@ class OpenAILikeLLM(LLMProvider):
         self.model = model
         self.max_chars = max_chars
         self.temperature = temperature
+        self._last_usage: dict[str, int] = {}
         if not self.api_key:
             raise RuntimeError(f"缺少 {name.upper()}_API_KEY。请在 .env 配置后重试。")
+
+    @property
+    def last_usage(self) -> dict[str, int]:
+        """最近一次调用的 token 用量（TG-6 成本采集）。"""
+        return self._last_usage
+
+    @staticmethod
+    def _usage_from_resp(usage) -> dict[str, int]:
+        """从 OpenAI 兼容响应提取 input/output/cache token。"""
+        cached = 0
+        details = getattr(usage, "prompt_tokens_details", None)
+        if details is not None:
+            cached = getattr(details, "cached_tokens", 0) or 0
+        return {
+            "prompt_tokens": getattr(usage, "prompt_tokens", 0) or 0,
+            "completion_tokens": getattr(usage, "completion_tokens", 0) or 0,
+            "cached_tokens": cached,
+        }
 
     def _chat(self, system: str, user: str) -> str:
         from openai import OpenAI  # lazy import
@@ -58,6 +77,8 @@ class OpenAILikeLLM(LLMProvider):
                       {"role": "user", "content": user}],
             temperature=self.temperature,
         )
+        usage = getattr(resp, "usage", None)
+        self._last_usage = self._usage_from_resp(usage) if usage else {}
         return resp.choices[0].message.content or ""
 
     def _chunk_text(self, text: str, size: int, overlap: int = 200) -> list[str]:
@@ -77,14 +98,14 @@ class OpenAILikeLLM(LLMProvider):
         t0 = time.time()
         text = transcript.text
         if len(text) <= self.max_chars:
-            result = self._chat(SYSTEM_PROMPT, text)
+            result = self._chat(SYSTEM_PROMPT, guard_prompt(text))
         else:
             # Map-Reduce：分块总结 → 合并
             partials = []
             for i, chunk in enumerate(self._chunk_text(text, self.max_chars)):
-                partials.append(f"## 片段 {i + 1}\n" + self._chat(MAP_PROMPT, chunk))
+                partials.append(f"## 片段 {i + 1}\n" + self._chat(MAP_PROMPT, guard_prompt(chunk)))
             merged = "\n\n".join(partials)
-            result = self._chat(REDUCE_PROMPT, merged)
+            result = self._chat(REDUCE_PROMPT, guard_prompt(merged))
         self.last_elapsed = time.time() - t0
         return result
 

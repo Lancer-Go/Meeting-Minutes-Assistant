@@ -1,0 +1,18 @@
+# Caddy 反向代理配置（TG-7 TLS 终止）
+
+# 有域名（自动 HTTPS，推荐）
+# mma.example.com {
+#     reverse_proxy api:8000
+#     encode gzip
+# }
+
+# 无域名（IP 直连 + HTTP，开发/内网）
+:80 {
+    reverse_proxy api:8000
+    encode gzip
+}
+
+# 说明：
+# - Caddy 作为 compose 网络内服务时，上游 host 用服务名 `api:8000`
+# - 有域名时自动签发 Let's Encrypt 证书，实现全链路 TLS
+# - 需确保 80/443 端口安全组放行

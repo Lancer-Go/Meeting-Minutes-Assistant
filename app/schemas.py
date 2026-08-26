@@ -87,7 +87,7 @@ class StructuredMinute:
         }
 
     @classmethod
-    def from_dict(cls, data: dict) -> "StructuredMinute":
+    def from_dict(cls, data: dict) -> StructuredMinute:
         d = data or {}
         return cls(
             title=d.get("title", ""),

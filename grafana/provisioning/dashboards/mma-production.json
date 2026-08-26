@@ -1,0 +1,129 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "任务创建速率",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(rate(mma_tasks_created_total[5m]))",
+          "legendFormat": "创建/s",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line" } }, "overrides": [] }
+    },
+    {
+      "type": "timeseries",
+      "title": "错误率",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(rate(mma_errors_total[5m])) by (stage)",
+          "legendFormat": "{{stage}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line" } }, "overrides": [] }
+    },
+    {
+      "type": "timeseries",
+      "title": "转写耗时（秒）",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, rate(mma_asr_duration_seconds_bucket[5m]))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(mma_asr_duration_seconds_bucket[5m]))",
+          "legendFormat": "p95",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line" }, "unit": "s" }, "overrides": [] }
+    },
+    {
+      "type": "timeseries",
+      "title": "纪要生成耗时（秒）",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, rate(mma_minute_duration_seconds_bucket[5m]))",
+          "legendFormat": "p50",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line" }, "unit": "s" }, "overrides": [] }
+    },
+    {
+      "type": "timeseries",
+      "title": "LLM token 用量",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "expr": "sum(rate(mma_llm_tokens_total[5m])) by (kind)",
+          "legendFormat": "{{kind}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line" } }, "overrides": [] }
+    },
+    {
+      "type": "timeseries",
+      "title": "累计成本（元）",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "targets": [
+        {
+          "expr": "mma_llm_cost_rmb_total",
+          "legendFormat": "LLM 成本",
+          "refId": "A"
+        },
+        {
+          "expr": "mma_asr_cost_rmb_total",
+          "legendFormat": "ASR 成本",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line" }, "unit": "currencyCNY" }, "overrides": [] }
+    },
+    {
+      "type": "stat",
+      "title": "当前任务状态",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "targets": [
+        {
+          "expr": "mma_tasks_status",
+          "legendFormat": "{{status}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line" } }, "overrides": [] }
+    },
+    {
+      "type": "stat",
+      "title": "队列积压（pending）",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "targets": [
+        {
+          "expr": "mma_tasks_status{status=\"pending\"}",
+          "legendFormat": "pending",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line" } }, "overrides": [] }
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["mma"],
+  "time": { "from": "now-6h", "to": "now" },
+  "timezone": "browser",
+  "title": "会议纪要助手 - 生产监控",
+  "uid": "mma-production",
+  "version": 1
+}

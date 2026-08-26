@@ -2,7 +2,12 @@
 import pytest
 
 from app.asr import Segment, Transcript
-from app.summary import ExtractiveLLM, OpenAILikeLLM, get_llm_provider, has_cloud_credentials
+from app.summary import (
+    ExtractiveLLM,
+    OpenAILikeLLM,
+    get_llm_provider,
+    has_cloud_credentials,
+)
 
 
 def make_transcript():

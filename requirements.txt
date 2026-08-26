@@ -33,3 +33,27 @@ python-multipart==0.0.32
 # ---- 测试 (M1) ----
 pytest==9.1.1
 httpx==0.28.1
+
+# ---- M3 · 生产存储（TG-2）----
+sqlalchemy==2.0.52              # ORM 双模式（sqlite:// 本地 / postgresql:// 生产）
+psycopg2-binary==2.9.12         # PostgreSQL 驱动
+boto3==1.43.80                  # MinIO / S3 兼容对象存储
+
+# ---- M3 · 任务队列（TG-0）----
+celery==5.6.3                   # 生产任务队列（替换 BackgroundTasks）
+redis==8.1.0                    # Celery broker / backend
+
+# ---- M3 · 可观测（TG-3）----
+prometheus-client==0.26.0       # /metrics 指标端点
+
+# ---- M3 · 安全（TG-4）----
+PyJWT==2.13.0                   # JWT 签发 / 校验
+bcrypt==5.0.0                   # 密码哈希
+cryptography==50.0.0            # AES-256-GCM 应用层加密
+
+# ---- M3 · 性能测试（TG-5）----
+locust==2.46.4                  # 压测
+
+# ---- M3 · 质量（TG-1）----
+ruff==0.16.4                    # lint
+pytest-cov==7.1.0               # 覆盖率

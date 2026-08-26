@@ -1,0 +1,13 @@
+[tool.ruff]
+# M3 TG-1：统一 lint 规则，保证 CI 与本地一致。
+# 规则集：pyflakes(F) + pycodestyle(E4/E7/E9) + isort(I) + pyupgrade(UP) + bugbear(B)
+# 不启用 SIM / RUF（中文文档/全角标点会触发 RUF002 等误报）。
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "UP", "B"]
+ignore = [
+    "B008",   # FastAPI `Depends(...)` 在参数默认值中的框架惯用法
+    "BLE001", # 盲捕获 Exception：服务降级/兜底场景有意为之
+]
