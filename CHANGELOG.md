@@ -58,6 +58,9 @@
 - 阶段执行文档目录迁移至 specs/ 下（3e1f442）
 - 用真实会议（80min）完成三家 ASR 对比与 DeepSeek 端到端纪要，锁定选型（ASR 腾讯云 16k_zh / LLM DeepSeek-chat），回填《选型决策记录》（b3499f0）
 
+### 修复
+- `storage` 的 S3 上传由强制 SSE-AES256 改为 `S3_SSE_ENABLED` 可配置（代码默认开，本地 MinIO 无 KES 时 compose 默认关），修复上传报 "KMS is not configured" 导致任务 500 的问题（0d655f8）
+
 ### 文档
 - tech-stack 更新至 v0.8，回填 M3 实际选型（Celery+Redis / PostgreSQL+MinIO / 自建账号+JWT / Prometheus+Grafana / GitHub Actions / Locust / 成本监控），B4 数据模型与 API、B5 测试、B6 部署对齐 M3 实现；roadmap「当前进度」更新为 M3 已落地、TG-7 灰度上线待云服务器就绪（369c8a6）
 - tech-stack 更新至 v0.7，新增 A6「成本模型与计费参考」：DeepSeek 2026-08 官方价格表（V4 Pro / Flash / Vision-Exp，含高峰/空闲与缓存命中价）、扣费规则、V4 Pro 单场成本估算（推算 ≈ ¥0.2~0.8/场·空闲，标注假设待 M3 重测）、flash 降本备选；选型决策记录补 V4 Pro 价格备注（5e774e8）
