@@ -1,4 +1,4 @@
-"""M1 · ingestion 模块 — 上传校验（格式白名单 / 大小 / 时长）。
+"""M1 · ingestion 模块 — 上传校验（格式白名单 / 大小 / 时长）；M3 增强魔数校验与文件名消毒（TG-4）。
 
 纯函数，可单测。FR-01 上传校验与 FR-02 输入约束。
 """
@@ -7,6 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from app import audio, config
+from app.security import sanitize_filename, validate_magic
 
 
 def validate_extension(filename: str) -> str | None:
@@ -37,3 +38,12 @@ def validate_duration(path: Path) -> str | None:
     if dur > config.MAX_DURATION_SECONDS:
         return f"会议时长 {dur / 60:.0f} 分钟，超过上限 2 小时"
     return None
+
+
+__all__ = [
+    "sanitize_filename",
+    "validate_duration",
+    "validate_extension",
+    "validate_magic",
+    "validate_size",
+]

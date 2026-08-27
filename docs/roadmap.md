@@ -228,6 +228,8 @@ timeline
 
 ---
 
-> 📌 **当前进度**：M0（选型锁定）、M1（MVP 闭环）与 M2（结构增强：行动项 / 说话人 / 角色 / 模板 / 编辑检索）已完成；下一步推进 **M3 · 生产化**（云端部署 / 可观测 / 合规）。
+> 📌 **当前进度**：M0（选型锁定）、M1（MVP 闭环）、M2（结构增强）已完成；**M3 · 生产化** 代码与交付物已落地（D1~D8：多服务 Compose / Celery+Redis / PostgreSQL+MinIO / CI/CD / 可观测 / 安全加固 / Locust / 成本监控），**TG-7 灰度上线** 待云服务器就绪（按 validation §5 降级为本地模拟生产演练，服务器就绪后回填在线率/吞吐云端实测）。下一步：云服务器就绪后完成 M3 上线收口，随后推进 **M4 · 智能化**。
 >
 > 🔄 变更（2026-08-25）：LLM 主方案由 DeepSeek-V3 升级为 DeepSeek-V4 Pro（deepseek-v4-pro）；转写阶段新增按切片推进的进度展示（「第 x/N 段已完成」）；M2 落地结构化抽取（Function-Calling + 规则兜底）、说话人分离（腾讯云 SpeakerDiarization + pyannote/占位兜底）、角色识别（规则 + LLM 辅助）、Jinja2 三模板、编辑批注与历史检索、Eval 评测集与脚本。
+>
+> 🔄 变更（2026-08-26）：M3 生产化落地——服务拆分（api/worker 独立容器 + Celery+Redis 队列）、生产存储（SQLAlchemy 双模式 + MinIO 对象存储 + 迁移脚本）、自建账号体系（注册/登录 + JWT + user_id 越权隔离）、上传魔数校验与提示词注入缓解、AES-256 加密、审计日志、Prometheus+Grafana 可观测与告警、成本监控与限额告警（cost_stats）、GitHub Actions CI/CD、Locust 压测脚本、Caddy TLS 与回滚/观察方案。

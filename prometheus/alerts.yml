@@ -1,0 +1,39 @@
+# 告警规则（TG-3 / TG-6 联动）
+groups:
+  - name: mma
+    rules:
+      # 错误率突增：最近 5 分钟错误计数 > 0（或按比例阈值）
+      - alert: MMAErrorSpike
+        expr: increase(mma_errors_total[5m]) > 0
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "会议纪要助手错误率上升"
+          description: "最近 5 分钟出现 {{ $value }} 次错误（stage={{ $labels.stage }}）。"
+
+      # 任务积压：pending 任务数过高
+      - alert: MMAPendingBacklog
+        expr: mma_tasks_status{status="pending"} > 10
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "任务队列积压"
+          description: "pending 任务数 {{ $value }}，超过 10，请检查 worker 是否正常消费。"
+
+      # 成本超限（TG-6 联动）：日 LLM 成本超过限额
+      - alert: MMACostOverLimit
+        expr: increase(mma_llm_cost_rmb_total[1d]) > 5.0
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "当日 LLM 成本超限"
+          description: "当日 LLM 成本已达 ¥{{ $value }}，超过限额 ¥5.0，请人工确认。"
+
+      # 服务探活：API 无指标上报（可能宕机）
+      - alert: MMAAPIDown
+        expr: up{job="mma-api"} == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "API 服务不可达"
+          description: "Prometheus 无法抓取 mma-api 指标，API 可能宕机。"

@@ -58,6 +58,7 @@
   <ul id="comments"></ul>
 </main>
 
+<script src="/static/auth.js"></script>
 <script>
 const taskId = new URLSearchParams(location.search).get('id');
 const $ = (id) => document.getElementById(id);
@@ -71,7 +72,7 @@ function setStatus(text, cls) {
 
 async function loadMinute() {
   try {
-    const resp = await fetch('/api/tasks/' + taskId + '/minute');
+    const resp = await apiFetch('/api/tasks/' + taskId + '/minute');
     if (!resp.ok) { setStatus('加载失败：' + resp.status, 'err'); return; }
     $('editor').value = await resp.text();
     $('sub').textContent = '任务 ' + taskId;
@@ -81,7 +82,7 @@ async function loadMinute() {
 async function save() {
   const markdown = $('editor').value;
   try {
-    const resp = await fetch('/api/tasks/' + taskId + '/minute', {
+    const resp = await apiFetch('/api/tasks/' + taskId + '/minute', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ markdown: markdown }),
@@ -94,7 +95,7 @@ async function save() {
 
 async function loadComments() {
   try {
-    const resp = await fetch('/api/tasks/' + taskId + '/comments');
+    const resp = await apiFetch('/api/tasks/' + taskId + '/comments');
     const rows = await resp.json();
     const ul = $('comments');
     ul.innerHTML = '';
@@ -119,7 +120,7 @@ async function addComment() {
   if (!text) return;
   const author = $('cmtAuthor').value.trim();
   try {
-    const resp = await fetch('/api/tasks/' + taskId + '/comments', {
+    const resp = await apiFetch('/api/tasks/' + taskId + '/comments', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text: text, author: author }),
@@ -132,7 +133,7 @@ async function addComment() {
 
 async function delComment(id) {
   try {
-    await fetch('/api/tasks/' + taskId + '/comments/' + id, { method: 'DELETE' });
+    await apiFetch('/api/tasks/' + taskId + '/comments/' + id, { method: 'DELETE' });
     loadComments();
   } catch (e) { /* 忽略 */ }
 }

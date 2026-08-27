@@ -24,6 +24,7 @@ from app.schemas import (
     StructuredMinute,
     build_tool_schemas,
 )
+from app.security import guard_prompt
 
 SYSTEM_PROMPT = (
     "你是会议纪要助手的结构化抽取器。请根据会议转写内容，用提供的函数抽取"
@@ -50,7 +51,7 @@ def _parse_json_robust(text: str) -> dict | None:
     except (json.JSONDecodeError, TypeError):
         pass
     # 提取首个 {...} 块（容错 fenced / 前缀说明）
-    m = re.search(r"\{.*\}", text, re.S)
+    m = re.search(r"\{.*\}", text, re.DOTALL)
     if not m:
         return None
     try:
@@ -79,8 +80,14 @@ class DeepSeekExtractor(ExtractorProvider):
         self.api_key = api_key or config.DEEPSEEK_API_KEY
         self.model = model or config.DEEPSEEK_MODEL
         self.max_chars = max_chars
+        self._last_usage: dict[str, int] = {}
         if not self.api_key:
             raise RuntimeError("缺少 DEEPSEEK_API_KEY。请在 .env 配置后重试（或改用 rule 兜底）。")
+
+    @property
+    def last_usage(self) -> dict[str, int]:
+        """最近一次抽取的 token 用量（TG-6 成本采集）。"""
+        return self._last_usage
 
     def _call_tools(self, text: str) -> dict:
         """一次 chat completion 携带三个抽取 tool，收集所有 tool call 参数。"""
@@ -91,12 +98,16 @@ class DeepSeekExtractor(ExtractorProvider):
             model=self.model,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": text},
+                {"role": "user", "content": guard_prompt(text)},
             ],
             tools=build_tool_schemas(),
             tool_choice="auto",
             temperature=0.0,
         )
+        usage = getattr(resp, "usage", None)
+        if usage:
+            from app.summary import OpenAILikeLLM
+            self._last_usage = OpenAILikeLLM._usage_from_resp(usage)
         merged: dict = {"decisions": [], "actions": [], "open_questions": []}
         message = resp.choices[0].message
         for call in message.tool_calls or []:

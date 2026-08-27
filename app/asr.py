@@ -236,8 +236,9 @@ class AliyunNLSRealtimeASR(ASRProvider):
         import json as _json
         import time as _t
         import wave as _wave
-        from nls.token import getToken
+
         from nls.speech_transcriber import NlsSpeechTranscriber
+        from nls.token import getToken
 
         token = getToken(self.ak_id, self.ak_secret)
         segs: list[Segment] = []

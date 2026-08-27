@@ -44,7 +44,6 @@ def test_run_task_missing(tmp_data_dir):
 
 
 def test_run_task_progress_callback(tmp_data_dir, monkeypatch):
-    seen = []
     _mk_task("t3", tmp_data_dir / "meeting.wav")
     (tmp_data_dir / "meeting.wav").write_bytes(b"x")
 

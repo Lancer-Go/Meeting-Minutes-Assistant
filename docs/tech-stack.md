@@ -2,7 +2,7 @@
 
 | 文档类型 | 技术栈与技术设计 |
 | --- | --- |
-| 版本 / 状态 | v0.7（M2 结构增强已落地：结构化抽取 / 说话人 / 角色 / 三模板 / 编辑检索 / Eval 集；新增 A6 成本模型与计费参考）✅ |
+| 版本 / 状态 | v0.8（M3 生产化已落地：Celery+Redis 队列 / PostgreSQL+MinIO 存储 / 自建账号+JWT / Prometheus+Grafana 可观测 / CI/CD / 成本监控 / 灰度上线准备）✅ |
 | 关联文档 | [mission](mission.md) · [roadmap](roadmap.md) · [选型决策记录](decisions/选型决策记录.md) |
 
 > 说明：本文汇总技术选型（Part A）与技术设计（Part B：需求、架构、方案、数据、测试、部署）。标记 🔶【建议】为倾向方案，✅【已定】为已决项。关键决策（云端 SaaS 优先 / 走云 API / 中文为主 / ≤ 2 小时 / 利润 0 性价比优先）见 [mission.md §8](mission.md)，具体厂商已由 M0 实测锁定，见 [decisions/选型决策记录.md](decisions/选型决策记录.md)。
@@ -84,12 +84,12 @@
 | 模块 | 方案 🔶建议 | 说明 |
 | --- | --- | --- |
 | Web 框架 | **FastAPI** ✅ | M1 已落地（异步、类型友好） |
-| 任务队列 | FastAPI BackgroundTasks（M1）→ Celery + Redis（M3） | MVP 用轻量方案；生产级队列留 M3 |
-| 存储 | 本地文件系统 + SQLite（M1/M2）→ S3 + PostgreSQL（M3） | M2 新增 `minutes` / `comments` 表；生产存储留 M3 |
-| 容器化 | **Docker / Docker Compose** ✅ | M1 已落地（本地一键起） |
-| 编排（云端） | Kubernetes | Worker 可扩缩（🕐 M3） |
-| 可观测 | 结构化日志（✅ M1）+ Prometheus + Grafana | 指标 / 告警面板留 M3 |
-| CI/CD | GitHub Actions | lint → test → build → 镜像发布（🕐 M3） |
+| 任务队列 | FastAPI BackgroundTasks（M1）→ **Celery + Redis** ✅ | M3 已落地（API 入队 / worker 消费 / 状态回写；本地开发回退 BackgroundTasks） |
+| 存储 | 本地文件系统 + SQLite（M1/M2）→ **PostgreSQL + MinIO** ✅ | M3 已落地（SQLAlchemy 双模式 sqlite:///postgresql://，boto3 S3 兼容对象存储 + 本地 FS 兜底；预留平滑迁移腾讯云 COS） |
+| 容器化 | **Docker / Docker Compose** ✅ | M3 已落地多服务编排（api / worker / redis / postgres / minio / prometheus / grafana） |
+| 编排（云端） | Kubernetes | Worker 可扩缩已通过 `--scale worker=N` 预留（M3 架构预留，K8s 留真实多机需要） |
+| 可观测 | 结构化日志（✅ M1）+ **Prometheus + Grafana** ✅ | M3 已落地 `/metrics` + 采集 + 面板 + 告警规则（webhook/邮件） |
+| CI/CD | **GitHub Actions** ✅ | M3 已落地（lint → test → build → GHCR 镜像发布） |
 
 ### A4. 选型原则
 
@@ -107,7 +107,7 @@
 | --- | --- | --- |
 | ASR 主方案 | ✅ 云 API（接受数据出域） | ✅ **腾讯云 16k_zh**（中英混用最优、批量录音文件识别）；备选阿里云 NLS；本地兜底 faster-whisper |
 | LLM 主方案 | ✅ 性价比高（利润 0） | ✅ **DeepSeek-V4 Pro（deepseek-v4-pro）**（纪要质量更优，由 V3 升级）；备选 Qwen（待密钥）；计费与单场成本估算见 A6 |
-| 部署形态 | ✅ 云端 SaaS 优先 | 本地 Docker Compose 已落地（M1）；云端 K8s / 云托管留 M3 |
+| 部署形态 | ✅ 云端 SaaS 优先 | ✅ **腾讯云服务器 + Docker Compose 单机多服务**（M3 已落地：Worker 独立容器可 `--scale` 扩缩、存储外置；K8s 留真实多机需要） |
 
 ### A6. 成本模型与计费参考（DeepSeek LLM）
 
@@ -225,8 +225,10 @@ flowchart TB
 | **summary** | LLM 纪要生成、模板化 | DeepSeek-V4 Pro（deepseek-v4-pro）（备选 Qwen） |
 | **extractor** | 决议/行动项/负责人/截止时间抽取 | LLM Function-Call / JSON Schema |
 | **render** | 纪要渲染为 Markdown | Markdown / Jinja2（Pandoc 后期） |
-| **orchestrator** | 任务状态机、队列调度、重试 | FastAPI BackgroundTasks（M1）/ Celery（M3） |
-| **storage** | 原始文件、中间产物、纪要持久化 | 本地 FS + SQLite（M1）/ 对象存储 + PostgreSQL（M3） |
+| **orchestrator** | 任务状态机、队列调度、重试 | FastAPI BackgroundTasks（M1）/ **Celery + Redis**（M3 已落地） |
+| **storage** | 原始文件、中间产物、纪要持久化 | 本地 FS + SQLite（M1）/ **PostgreSQL + MinIO**（M3 已落地，boto3 封装，本地 FS 兜底） |
+| **auth / security** | 注册/登录、JWT 鉴权、越权防护、上传校验、加密、审计 | bcrypt + PyJWT HS256 + AES-256-GCM + 审计日志（M3 已落地） |
+| **metrics / cost** | 指标、成本统计、限额告警 | prometheus-client + cost_stats 表（M3 已落地） |
 
 **部署形态**
 
@@ -266,9 +268,12 @@ ffmpeg -i input.mp4 -vn -ac 1 -ar 16000 -f wav output.wav
 
 | 实体 | 关键字段 | 状态 |
 | --- | --- | --- |
-| Task | id, source_file, stored_path, status, progress, progress_message, error, audio_duration_min, transcript_chars, cost_rmb, created_at / started_at / finished_at | ✅ M1 已落地（SQLite `tasks` 表；`progress_message` 记录转写切片进度） |
+| Task | id, source_file, stored_path, **user_id**, status, progress, progress_message, error, audio_duration_min, transcript_chars, cost_rmb, created_at / started_at / finished_at | ✅ M1 已落地；M3 迁 SQLAlchemy（sqlite/postgresql 双模式）+ `user_id` 越权隔离 |
 | Transcript | task_id, segments[]（start/end/text/speaker） | ✅ M2 已落地（`transcript.json` / `.txt`，segment 带 speaker） |
-| Minute | task_id, title, summary_md, decisions[], actions[], open_questions[], speakers[] | ✅ M2 已落地（SQLite `minutes` 表：title / template / summary_md / structured_json / edited_md；`comments` 表：author / text / quote） |
+| Minute | task_id, title, summary_md, decisions[], actions[], open_questions[], speakers[] | ✅ M2 已落地（`minutes` 表：title / template / summary_md / structured_json / edited_md；`comments` 表：author / text / quote） |
+| User | id, username, password_hash, created_at | ✅ M3 已落地（自建账号，bcrypt 哈希） |
+| AuditLog | id, user_id, action, target, ip, created_at | ✅ M3 已落地（登录/任务/编辑/批注留痕） |
+| CostStat | id, task_id, user_id, date, llm_tokens_in/out/cache, llm_cost, asr_cost, total_cost | ✅ M3 已落地（按场/按日成本统计，联动限额告警） |
 
 **ER 关系**：`TASK 1—N SEGMENT`；`TASK 1—0..1 MINUTE`；`MINUTE 1—N ACTION / DECISION`。
 
@@ -287,26 +292,31 @@ ffmpeg -i input.mp4 -vn -ac 1 -ar 16000 -f wav output.wav
 | DELETE | `/api/tasks/{id}/comments/{comment_id}` | 删除批注 | ✅ M2 |
 | GET | `/api/minutes` | 纪要历史列表 / 搜索（q / from / to / topic） | ✅ M2 |
 | GET | `/health` | 健康检查 | ✅ M1 |
+| POST | `/api/auth/register` | 注册（自建账号，bcrypt 哈希） | ✅ M3 |
+| POST | `/api/auth/login` | 登录（返回 JWT，PyJWT HS256） | ✅ M3 |
+| GET | `/api/costs` | 成本统计（按日累计 / 明细 / 限额状态） | ✅ M3 |
+| GET | `/metrics` | Prometheus 指标端点 | ✅ M3 |
 | POST | `/api/tasks/{id}/regen` | 重新生成（换模型/模板） | 🕐 后期 |
 
 ### B5. 测试策略
 
 | 层级 | 重点 | 手段 |
 | --- | --- | --- |
-| 单元测试 | 纯逻辑、提示词解析、字段校验 | pytest（✅ M1 已用，覆盖率 78% → M2 82%） |
+| 单元测试 | 纯逻辑、提示词解析、字段校验 | pytest（✅ 覆盖率 M1 78% → M2 82% → M3 81%，含 auth/storage/metrics/cost） |
 | 集成测试 | 音频→ASR→LLM 全链路 | 真实样例 + mock provider |
 | 评测集 (Eval Set) | 纪要质量、行动项准确率 | 人工标注黄金基准集 |
-| 性能测试 | 大文件、长会议、高并发 | Locust / k6 |
-| 安全测试 | 鉴权、越权、上传校验、模型注入 | OWASP 检查项 |
+| 性能测试 | 大文件、长会议、高并发 | **Locust**（M3 已落地 `locustfile.py`，压测以 mock ASR 为主控费） |
+| 安全测试 | 鉴权、越权、上传校验、模型注入 | **OWASP 检查项**（M3 已落地：JWT 鉴权 / user_id 越权 / 魔数校验 / 提示词注入缓解 / AES-256 / TLS） |
 
 > 质量底线：每个里程碑切换前跑固定 Eval 集，指标不达标不发版。
 
 ### B6. 部署与运维
 
-- **容器化**：Docker Compose 本地一键起（✅ M1 已落地）；K8s 云端集群留 M3。
-- **CI/CD**：GitHub Actions（lint → test → build → 镜像发布）—— 🕐 M3。
-- **可观测**：结构化日志（JSON，✅ M1 已落地 `JsonFormatter`）；指标 / 告警面板留 M3。
-- **安全合规**：加密存储、TLS、鉴权（🕐 M3）；本地化部署留作后期选项。
+- **容器化**：Docker Compose 多服务一键编排（✅ M3 已落地：api / worker / redis / postgres / minio / prometheus / grafana）；K8s 云端集群留真实多机需要。
+- **CI/CD**：GitHub Actions（lint → test → build → GHCR 镜像发布）—— ✅ M3 已落地（`.github/workflows/ci.yml`）。
+- **可观测**：结构化日志（JSON，✅ M1 `JsonFormatter`）+ `/metrics` + Prometheus 采集 + Grafana 面板 + 告警规则（✅ M3）。
+- **安全合规**：自建账号 + JWT、user_id 越权隔离、上传魔数校验、提示词注入缓解、AES-256（MinIO SSE + 应用层）+ TLS（Caddy 反代，✅ M3）。
+- **成本监控**：按场/按日成本统计（cost_stats）+ 日限额/单场超预算告警，联动 Prometheus（✅ M3）。
 
 ---
 

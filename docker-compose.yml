@@ -1,17 +1,145 @@
+# M3 生产化 — 多服务编排（TG-0/TG-2/TG-3/TG-7）
+# 服务：api / worker / redis / postgres / minio / prometheus / grafana
+# 用法：
+#   docker compose up -d                一键拉起全部服务
+#   docker compose up -d --scale worker=3   worker 横向扩缩（无重复/丢失）
+#   docker compose down                 停止（数据卷外置，不丢数据）
+#
+# 前置：复制 .env.example 为 .env 并填入云密钥（ASR/LLM）与 JWT_SECRET。
+
 services:
-  mma:
+  # ---- 业务：API（FastAPI + 前端静态资源）----
+  api:
     build: .
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
     ports:
       - "8000:8000"
-    environment:
-      # ASR / LLM 主选（M0 锁定：腾讯云 16k_zh / DeepSeek-V4 Pro）
-      MMA_ASR: tencent
-      MMA_LLM: deepseek
+    environment: &common
+      MMA_ASR: ${MMA_ASR:-tencent}
+      MMA_LLM: ${MMA_LLM:-deepseek}
+      MMA_USE_CELERY: "true"
+      MMA_AUTH_ENABLED: "true"
       MMA_DATA_DIR: /data
+      DATABASE_URL: postgresql://mma:${POSTGRES_PASSWORD:-mma}@postgres:5432/mma
+      REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT: http://minio:9000
+      S3_BUCKET: ${S3_BUCKET:-mma}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
+      S3_SSE_ENABLED: ${S3_SSE_ENABLED:-false}   # 本地 MinIO 无 KES，关闭 SSE；生产 COS/S3 设 true
+      JWT_SECRET: ${JWT_SECRET:-dev-insecure-secret-change-me-in-production}
+      AES_KEY: ${AES_KEY:-}
+      COST_LIMIT_DAILY_RMB: ${COST_LIMIT_DAILY_RMB:-5.0}
+      COST_LIMIT_PER_TASK_RMB: ${COST_LIMIT_PER_TASK_RMB:-1.0}
+      COST_AUTO_PAUSE: ${COST_AUTO_PAUSE:-false}
     env_file:
-      - .env            # 云密钥（.gitignore，不提交）
+      - .env                 # 云密钥（.gitignore，不提交）
     volumes:
-      - mma-data:/data  # 上传文件 + 任务产物 + SQLite
+      - mma-data:/data       # 任务产物（本地 FS 兜底）+ SQLite（本地模式）
+    depends_on:
+      redis: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+      minio: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ---- 业务：Worker（Celery 消费，可 --scale 横向扩缩）----
+  worker:
+    build: .
+    command: ["celery", "-A", "app.celery_app.celery", "worker",
+              "--loglevel=info", "--concurrency=2"]
+    environment: *common
+    env_file:
+      - .env
+    volumes:
+      - mma-data:/data
+    depends_on:
+      redis: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+      minio: { condition: service_healthy }
+
+  # ---- 队列：Redis ----
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ---- 存储：PostgreSQL ----
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: mma
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mma}
+      POSTGRES_DB: mma
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mma -d mma"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ---- 存储：MinIO（S3 兼容，预留平滑迁移腾讯云 COS）----
+  minio:
+    image: minio/minio:latest
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minioadmin}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # ---- 可观测：Prometheus ----
+  prometheus:
+    image: prom/prometheus:latest
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=30d"
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prom-data:/prometheus
+    depends_on:
+      - api
+
+  # ---- 可观测：Grafana ----
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
 
 volumes:
   mma-data:
+  redis-data:
+  pg-data:
+  minio-data:
+  prom-data:
+  grafana-data:

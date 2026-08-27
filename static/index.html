@@ -40,10 +40,19 @@
   .tag.succeeded { background: #dcfce7; color: #166534; }
   .tag.failed { background: #fee2e2; color: #991b1b; }
   .hidden { display: none; }
+  .authbar { text-align: right; font-size: 13px; margin-bottom: 8px; }
+  .authbar a { color: var(--accent); text-decoration: none; margin-left: 12px; }
+  .authbar span { color: var(--muted); }
 </style>
 </head>
 <body>
 <main>
+  <div class="authbar" id="authbar">
+    <span id="whoami"></span>
+    <a href="/login.html" id="loginLink">登录</a>
+    <a href="/register.html" id="regLink">注册</a>
+    <a href="javascript:logout()" id="logoutLink" class="hidden">登出</a>
+  </div>
   <h1>会议纪要助手</h1>
   <p class="sub">上传会议录音/录像（MP4 / MKV / WAV / MP3 / M4A，≤ 2 小时），自动生成结构化 Markdown 纪要</p>
 
@@ -64,10 +73,21 @@
   <ul id="searchResults" style="margin-top:8px;"></ul>
 </main>
 
+<script src="/static/auth.js"></script>
 <script>
 const STATUS_TEXT = { pending: '排队中', running: '处理中', succeeded: '已完成', failed: '失败' };
 
 const $ = (id) => document.getElementById(id);
+
+// 登录态展示
+(function initAuthBar() {
+  if (isLoggedIn()) {
+    $('whoami').textContent = '已登录';
+    $('loginLink').classList.add('hidden');
+    $('regLink').classList.add('hidden');
+    $('logoutLink').classList.remove('hidden');
+  }
+})();
 
 function setStatus(text, cls) {
   const el = $('status');
@@ -90,7 +110,7 @@ async function upload() {
   const form = new FormData();
   form.append('file', file);
   try {
-    const resp = await fetch('/api/tasks', { method: 'POST', body: form });
+    const resp = await apiFetch('/api/tasks', { method: 'POST', body: form });
     const data = await resp.json();
     if (!resp.ok) { setStatus('上传失败：' + (data.detail || resp.status), 'err'); return; }
     poll(data.id);
@@ -104,7 +124,7 @@ async function upload() {
 function poll(id) {
   const timer = setInterval(async () => {
     try {
-      const resp = await fetch('/api/tasks/' + id);
+      const resp = await apiFetch('/api/tasks/' + id);
       const t = await resp.json();
       const pmsg = t.progress_message ? ` — ${t.progress_message}` : '';
       setStatus(`${STATUS_TEXT[t.status] || t.status}（${Math.round(t.progress || 0)}%）${pmsg}`);
@@ -126,8 +146,8 @@ function poll(id) {
 function showResult(id) {
   const el = $('result');
   el.innerHTML = '<b>✅ 纪要已生成</b><br><br>' +
-    '<a href="/api/tasks/' + id + '/minute" download>📄 下载纪要 (Markdown)</a>' +
-    '<a href="/api/tasks/' + id + '/transcript" download>📝 下载转写文本</a>';
+    '<a href="javascript:downloadFile(\'/api/tasks/' + id + '/minute\', \'minutes.md\')">📄 下载纪要 (Markdown)</a>' +
+    '<a href="javascript:downloadFile(\'/api/tasks/' + id + '/transcript\', \'transcript.txt\')">📝 下载转写文本</a>';
   el.classList.remove('hidden');
   setStatus('已完成', 'ok');
   $('progressWrap').classList.add('hidden');
@@ -135,7 +155,7 @@ function showResult(id) {
 
 async function loadHistory() {
   try {
-    const resp = await fetch('/api/tasks');
+    const resp = await apiFetch('/api/tasks');
     const tasks = await resp.json();
     const ul = $('history');
     ul.innerHTML = '';
@@ -144,7 +164,7 @@ async function loadHistory() {
       li.innerHTML = `<span>${escapeHtml(t.source_file)}</span>` +
         `<span class="tag ${t.status}">${STATUS_TEXT[t.status] || t.status}</span>` +
         (t.status === 'succeeded'
-          ? ` <a href="/api/tasks/${t.id}/minute" download>下载</a> <a href="/minute.html?id=${t.id}">编辑</a>`
+          ? ` <a href="javascript:downloadFile('/api/tasks/${t.id}/minute', 'minutes.md')">下载</a> <a href="/minute.html?id=${t.id}">编辑</a>`
           : '');
       ul.appendChild(li);
     });
@@ -159,7 +179,7 @@ async function searchMinutes(q) {
   const ul = $('searchResults');
   if (!q) { ul.innerHTML = ''; return; }
   try {
-    const resp = await fetch('/api/minutes?q=' + encodeURIComponent(q));
+    const resp = await apiFetch('/api/minutes?q=' + encodeURIComponent(q));
     const rows = await resp.json();
     ul.innerHTML = '';
     if (!rows.length) {

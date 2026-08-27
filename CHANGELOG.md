@@ -23,6 +23,13 @@
 -->
 
 ### 新增
+- 实现 M3 服务拆分与容器化：Celery + Redis 生产队列（`app/celery_app.py`，替换 BackgroundTasks 直调，本地开发回退 BackgroundTasks）+ 多服务 Docker Compose（api/worker/redis/postgres/minio/prometheus/grafana，卷外置 + 健康检查 + worker 可 `--scale` 扩缩）+ config 环境变量化（DATABASE_URL/REDIS_URL/S3_*/JWT_SECRET/COST_LIMIT_*）（369c8a6）
+- 实现 M3 生产存储迁移：`app/db.py` 标准库 sqlite3 → SQLAlchemy 双模式（sqlite:// 本地 / postgresql:// 生产，函数签名与 dict 返回保持 M1/M2 兼容），新增 users/audit_logs/cost_stats 表 + tasks.user_id；`app/storage.py`（boto3 S3 兼容 + 本地 FS 兜底，SSE-AES256）+ `scripts/migrate_sqlite_to_pg.py` 迁移脚本（369c8a6）
+- 实现 M3 安全加固：`app/auth.py`（注册/登录 + JWT PyJWT HS256 + bcrypt）+ 全业务路由鉴权与 user_id 越权隔离 + 上传魔数校验/文件名消毒 + 提示词注入缓解（`app/security.py` guard_prompt）+ AES-256-GCM 加密（`app/crypto.py`）+ 审计日志（`app/audit.py`）+ 前端登录/注册页与 Bearer token（`static/auth.js`）（369c8a6）
+- 实现 M3 可观测：`app/metrics.py`（prometheus-client）+ `GET /metrics` + Prometheus 采集配置 + Grafana 面板 + 告警规则（错误突增/积压/成本超限/宕机）+ request_id 中间件贯穿（369c8a6）
+- 实现 M3 成本监控：`app/cost.py`（A6 价格模型）+ LLM token 用量采集（summary/extractor 记 last_usage）+ cost_stats 按场/按日统计 + 日限额/单场超预算告警 + `GET /api/costs`（369c8a6）
+- 新增 CI/CD 与上线准备：`.github/workflows/ci.yml`（lint→test→build→GHCR 镜像发布）+ `pyproject.toml`（ruff 规则集）+ `locustfile.py` 压测脚本 + `deploy/`（部署指南 / Caddy TLS / 回滚方案 / 观察报告模板）（369c8a6）
+- 新增 M3 生产化任务准备（plan / requirements / validation 三文档）：云端部署（腾讯云服务器 + Docker Compose 单机多服务，Worker 独立容器预留扩缩）、生产存储（PostgreSQL + MinIO，S3 兼容预留迁 COS）、自建账号体系基础版（注册/登录 + JWT）、Prometheus + Grafana 可观测、CI/CD、成本监控、灰度上线（42a77f6）
 - 实现 M2 结构化 Schema 与数据模型：`ActionItem / Decision / OpenQuestion / StructuredMinute`（`app/schemas.py`，含 Function-Calling JSON Schema）+ `Segment.speaker` / `Transcript.speakers` + SQLite `minutes` / `comments` 表（4e9351c）
 - 实现 M2 行动项抽取 `app/extractor.py`：DeepSeek-V4 Pro 走 Function-Calling（`extract_decisions/actions/questions` tool_schema）+ 本地规则兜底（负责人/截止/待办正则，无密钥可跑通）（4e9351c）
 - 实现 M2 说话人分离 `app/diarization.py` 与角色识别 `app/role.py`：腾讯云 `SpeakerDiarization` 内置 + pyannote 兜底 + 占位 S1/S2；主持人/汇报人/参会者（规则 + LLM 辅助）（4e9351c）
@@ -38,6 +45,11 @@
 - 接入云 ASR 实测：阿里云 NLS 实时语音转写 + 腾讯云录音文件识别（b3499f0）
 
 ### 变更
+- `Dockerfile` 的 apt/pip 源切换为阿里云国内镜像（`mirrors.aliyun.com`），修复 Docker 构建流量走 Clash 代理（fake-ip）拉取 deb.debian.org 被 502 导致 `apt-get install` 失败的问题（e0faa88）
+- `db` 由标准库 sqlite3 迁移为 SQLAlchemy 双模式（sqlite/postgresql），新增 users/audit_logs/cost_stats 表与 tasks.user_id 越权隔离（369c8a6）
+- `worker` 由 BackgroundTasks 直调改为 Celery + Redis 队列（`MMA_USE_CELERY` 开关，本地开发回退），输入/产物走 storage 层（S3 / 本地 FS），成功后落 cost_stats（369c8a6）
+- `main` 新增 `POST /api/auth/register|login`、`GET /api/costs`、`GET /metrics`；既有业务路由全部加鉴权依赖与 user_id 过滤（369c8a6）
+- `summary`/`extractor` 采集 LLM token 用量（input/output/cache）供成本统计；`pipeline` 汇总真实 token 成本与指标观测（369c8a6）
 - `render` 由纯字符串拼接升级为 Jinja2 模板化渲染（新增 `render_minutes`，保留 `build_minutes_md` 向后兼容）；依赖新增 `jinja2==3.1.6`（4e9351c）
 - `pipeline` 全链路扩展：转写 → 说话人分离 → 角色识别 → 纪要 + 结构化抽取 → 三模板渲染；新增 `structured_minute.json` / `minutes.brief.md` / `minutes.detailed.md` 产物与 structured 统计（4e9351c）
 - `asr` 的 `Segment` 增 `speaker` 字段、`Transcript` 增 `speakers`；腾讯云启用 `SpeakerDiarization` 话者分离（结果读取 `SpeakerId`）（4e9351c）
@@ -46,7 +58,11 @@
 - 阶段执行文档目录迁移至 specs/ 下（3e1f442）
 - 用真实会议（80min）完成三家 ASR 对比与 DeepSeek 端到端纪要，锁定选型（ASR 腾讯云 16k_zh / LLM DeepSeek-chat），回填《选型决策记录》（b3499f0）
 
+### 修复
+- `storage` 的 S3 上传由强制 SSE-AES256 改为 `S3_SSE_ENABLED` 可配置（代码默认开，本地 MinIO 无 KES 时 compose 默认关），修复上传报 "KMS is not configured" 导致任务 500 的问题（0d655f8）
+
 ### 文档
+- tech-stack 更新至 v0.8，回填 M3 实际选型（Celery+Redis / PostgreSQL+MinIO / 自建账号+JWT / Prometheus+Grafana / GitHub Actions / Locust / 成本监控），B4 数据模型与 API、B5 测试、B6 部署对齐 M3 实现；roadmap「当前进度」更新为 M3 已落地、TG-7 灰度上线待云服务器就绪（369c8a6）
 - tech-stack 更新至 v0.7，新增 A6「成本模型与计费参考」：DeepSeek 2026-08 官方价格表（V4 Pro / Flash / Vision-Exp，含高峰/空闲与缓存命中价）、扣费规则、V4 Pro 单场成本估算（推算 ≈ ¥0.2~0.8/场·空闲，标注假设待 M3 重测）、flash 降本备选；选型决策记录补 V4 Pro 价格备注（5e774e8）
 - tech-stack 更新至 v0.6，回填 M2 实际选型（Jinja2 三模板 / 腾讯云 SpeakerDiarization / 占位话者兜底 / minutes-comments 表 / M2 REST 路由 / 覆盖率 82%）；roadmap「下一步」由推进 M2 更正为推进 M3；README 补充 M2 任务组与 Eval 用法（4e9351c）
 - tech-stack 更新至 v0.4，回填 M1 实际选型（FastAPI / BackgroundTasks / SQLite+本地FS / Docker Compose 落地；B4 数据模型与 REST API 对齐 M1 实现）；roadmap「下一步」由启动 M0 更正为推进 M2（0c13169）

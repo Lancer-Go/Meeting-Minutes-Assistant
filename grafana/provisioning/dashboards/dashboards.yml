@@ -1,0 +1,11 @@
+# Grafana 面板预置（TG-3）
+apiVersion: 1
+providers:
+  - name: "mma-dashboards"
+    orgId: 1
+    folder: "MMA"
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/provisioning/dashboards

@@ -1,18 +1,15 @@
-"""M1 · FastAPI 应用入口与 REST API；M2 扩展编辑/批注/历史检索。
+"""M1 · FastAPI 应用入口与 REST API；M2 扩展编辑/批注/历史检索；M3 生产化（鉴权/指标/成本/存储）。
 
-路由（对应 tech-stack.md B4）：
-  POST /api/tasks                上传文件并创建任务（异步执行全链路）
-  GET  /api/tasks                任务列表
-  GET  /api/tasks/{id}           任务状态与进度
-  GET  /api/tasks/{id}/transcript 转写文本下载
-  GET  /api/tasks/{id}/minute     纪要 Markdown 下载（编辑后返回编辑内容）
-  PUT  /api/tasks/{id}/minute     保存人工编辑后的纪要（M2 TG-5）
-  POST /api/tasks/{id}/comments   新增批注（M2 TG-5）
-  GET  /api/tasks/{id}/comments   批注列表（M2 TG-5）
-  DELETE /api/tasks/{id}/comments/{comment_id} 删除批注（M2 TG-5）
-  GET  /api/minutes              纪要历史列表 / 搜索（M2 TG-6）
-  GET  /health                   健康检查
-  GET  /                         极简前端
+路由（对应 tech-stack.md B4 + M3）：
+  认证：  POST /api/auth/register / POST /api/auth/login
+  任务：  POST /api/tasks（上传+异步执行）· GET /api/tasks · GET /api/tasks/{id}
+          GET  /api/tasks/{id}/transcript · GET|PUT /api/tasks/{id}/minute
+  批注：  POST|GET /api/tasks/{id}/comments · DELETE /api/tasks/{id}/comments/{cid}
+  检索：  GET  /api/minutes
+  成本：  GET  /api/costs
+  可观测：GET /metrics（Prometheus）
+  健康：  GET /health
+  前端：  / · /minute.html · /login.html · /register.html
 """
 from __future__ import annotations
 
@@ -20,23 +17,34 @@ import json
 import logging
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi import (
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+)
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
-from app import config, db, ingestion
+from app import audit, config, cost, db, ingestion, storage
+from app import metrics as metrics_mod
+from app.auth import get_current_user, login, register
 from app.worker import run_task
 
 
 class JsonFormatter(logging.Formatter):
-    """结构化 JSON 日志（TG-7）。"""
+    """结构化 JSON 日志（TG-3）。"""
 
     def format(self, record: logging.LogRecord) -> str:
         data = {
-            "ts": datetime.now(timezone.utc).isoformat(),
+            "ts": datetime.now(UTC).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "msg": record.getMessage(),
@@ -69,10 +77,21 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="会议纪要助手", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="会议纪要助手", version="0.3.0", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=str(config.STATIC_DIR)), name="static")
 
 
+# --------------------------------------------------------------------------- 请求级 trace（TG-3）
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    rid = request.headers.get("X-Request-ID") or uuid.uuid4().hex[:12]
+    request.state.request_id = rid
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = rid
+    return response
+
+
+# --------------------------------------------------------------------------- 前端页面
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse(config.STATIC_DIR / "index.html")
@@ -83,18 +102,82 @@ def minute_page() -> FileResponse:
     return FileResponse(config.STATIC_DIR / "minute.html")
 
 
+@app.get("/login.html")
+def login_page() -> FileResponse:
+    return FileResponse(config.STATIC_DIR / "login.html")
+
+
+@app.get("/register.html")
+def register_page() -> FileResponse:
+    return FileResponse(config.STATIC_DIR / "register.html")
+
+
+# --------------------------------------------------------------------------- 健康与指标
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok"}
 
 
+@app.get("/metrics")
+def metrics_endpoint() -> Response:
+    """Prometheus 指标端点（TG-3）。刷新状态 gauge 后输出。"""
+    if config.METRICS_ENABLED:
+        for status in (db.PENDING, db.RUNNING, db.SUCCEEDED, db.FAILED):
+            metrics_mod.set_task_status_gauge(status, db.count_tasks_by_status(status))
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
+# --------------------------------------------------------------------------- 认证（TG-4）
+@app.post("/api/auth/register", status_code=201)
+def api_register(payload: dict, request: Request) -> dict:
+    try:
+        user = register(payload.get("username", ""), payload.get("password", ""))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    audit.log("register_success", user["id"], user["username"], _ip(request))
+    return {"user": user}
+
+
+@app.post("/api/auth/login")
+def api_login(payload: dict, request: Request) -> dict:
+    try:
+        result = login(payload.get("username", ""), payload.get("password", ""))
+    except ValueError as e:
+        audit.log("login_failed", None, (payload.get("username") or "")[:64], _ip(request))
+        raise HTTPException(status_code=401, detail=str(e)) from e
+    audit.log("login_success", result["user"]["id"], result["user"]["username"], _ip(request))
+    return result
+
+
+# --------------------------------------------------------------------------- 任务（TG-0/TG-2/TG-4）
+def _enqueue(task_id: str, background_tasks: BackgroundTasks | None) -> None:
+    """入队：USE_CELERY 时走 Celery+Redis；否则 FastAPI BackgroundTasks（本地开发）。"""
+    if config.USE_CELERY:
+        from app.celery_app import process_task
+        process_task.delay(task_id)
+    elif background_tasks is not None:
+        background_tasks.add_task(run_task, task_id)
+    else:
+        run_task(task_id)
+
+
 @app.post("/api/tasks", status_code=202)
-async def create_task(background_tasks: BackgroundTasks, file: UploadFile) -> dict:
-    filename = file.filename or "upload"
+async def create_task(background_tasks: BackgroundTasks, file: UploadFile,
+                      request: Request,
+                      user: dict | None = Depends(get_current_user)) -> dict:
+    user_id = user["id"] if user else None
+    filename = ingestion.sanitize_filename(file.filename or "upload")
 
     err = ingestion.validate_extension(filename)
     if err:
         raise HTTPException(status_code=400, detail=err)
+
+    # 成本限额（可配置自动暂停新任务，默认关闭，避免误伤）
+    if config.COST_AUTO_PAUSE:
+        over, spent = cost.check_daily_limit(user_id=user_id)
+        if over:
+            raise HTTPException(status_code=429,
+                                detail=f"当日成本已达限额 ¥{spent:.2f}，暂停新任务")
 
     task_id = uuid.uuid4().hex
     ext = Path(filename).suffix.lower()
@@ -118,33 +201,47 @@ async def create_task(background_tasks: BackgroundTasks, file: UploadFile) -> di
         stored.unlink(missing_ok=True)
         raise HTTPException(status_code=400, detail=err)
 
+    # TG-4：文件魔数校验（扩展名与实际内容一致性）
+    err = ingestion.validate_magic(stored)
+    if err:
+        stored.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail=err)
+
     err = ingestion.validate_duration(stored)
     if err:
         stored.unlink(missing_ok=True)
         raise HTTPException(status_code=400, detail=err)
 
-    task = db.create_task(task_id, filename, str(stored))
-    background_tasks.add_task(run_task, task_id)
-    logger.info("task=%s 创建 file=%s size=%d", task_id, filename, size)
+    # TG-2：对象存储（S3 模式下上传，stored_path 存对象键；本地模式存本地路径）
+    if storage.is_s3():
+        stored_path = storage.get_storage().put_file(f"uploads/{task_id}{ext}", stored)
+    else:
+        stored_path = str(stored)
+
+    task = db.create_task(task_id, filename, stored_path, user_id=user_id)
+    metrics_mod.record_task_created(db.PENDING)
+    audit.log("task_create", user_id, task_id, _ip(request))
+    _enqueue(task_id, background_tasks)
+    logger.info("task=%s 创建 file=%s size=%d user=%s", task_id, filename, size, user_id)
     return task
 
 
 @app.get("/api/tasks")
-def list_tasks() -> list[dict]:
-    return db.list_tasks()
+def list_tasks(user: dict | None = Depends(get_current_user)) -> list[dict]:
+    return db.list_tasks(user_id=user["id"] if user else None)
 
 
 @app.get("/api/tasks/{task_id}")
-def get_task(task_id: str) -> dict:
-    task = db.get_task(task_id)
+def get_task(task_id: str, user: dict | None = Depends(get_current_user)) -> dict:
+    task = db.get_task(task_id, user_id=user["id"] if user else None)
     if not task:
         raise HTTPException(status_code=404, detail="任务不存在")
     return task
 
 
 @app.get("/api/tasks/{task_id}/transcript")
-def get_transcript(task_id: str) -> FileResponse:
-    if not db.get_task(task_id):
+def get_transcript(task_id: str, user: dict | None = Depends(get_current_user)) -> FileResponse:
+    if not db.get_task(task_id, user_id=user["id"] if user else None):
         raise HTTPException(status_code=404, detail="任务不存在")
     p = config.TASK_DIR / task_id / "transcript.txt"
     if not p.exists():
@@ -153,8 +250,8 @@ def get_transcript(task_id: str) -> FileResponse:
 
 
 @app.get("/api/tasks/{task_id}/minute")
-def get_minute(task_id: str) -> FileResponse:
-    if not db.get_task(task_id):
+def get_minute(task_id: str, user: dict | None = Depends(get_current_user)) -> FileResponse:
+    if not db.get_task(task_id, user_id=user["id"] if user else None):
         raise HTTPException(status_code=404, detail="任务不存在")
     task_dir = config.TASK_DIR / task_id
     edited = task_dir / "minutes.edited.md"
@@ -166,11 +263,13 @@ def get_minute(task_id: str) -> FileResponse:
 
 
 @app.put("/api/tasks/{task_id}/minute")
-def update_minute(task_id: str, payload: dict) -> dict:
-    """保存人工编辑后的纪要 Markdown（TG-5）。"""
-    if not db.get_task(task_id):
+def update_minute(task_id: str, payload: dict,
+                  request: Request,
+                  user: dict | None = Depends(get_current_user)) -> dict:
+    user_id = user["id"] if user else None
+    if not db.get_task(task_id, user_id=user_id):
         raise HTTPException(status_code=404, detail="任务不存在")
-    if not db.get_minute(task_id):
+    if not db.get_minute(task_id, user_id=user_id):
         raise HTTPException(status_code=404, detail="纪要尚未生成")
     markdown = payload.get("markdown")
     if not isinstance(markdown, str) or not markdown.strip():
@@ -179,40 +278,76 @@ def update_minute(task_id: str, payload: dict) -> dict:
     edited_path = config.TASK_DIR / task_id / "minutes.edited.md"
     edited_path.parent.mkdir(parents=True, exist_ok=True)
     edited_path.write_text(markdown, encoding="utf-8")
+    audit.log("minute_edit", user_id, task_id, _ip(request))
     logger.info("task=%s 纪要已人工编辑", task_id)
     return {"task_id": task_id, "edited": True}
 
 
+# --------------------------------------------------------------------------- 批注（M2/TG-4）
 @app.post("/api/tasks/{task_id}/comments", status_code=201)
-def add_comment(task_id: str, payload: dict) -> dict:
-    if not db.get_task(task_id):
+def add_comment(task_id: str, payload: dict,
+                request: Request,
+                user: dict | None = Depends(get_current_user)) -> dict:
+    user_id = user["id"] if user else None
+    if not db.get_task(task_id, user_id=user_id):
         raise HTTPException(status_code=404, detail="任务不存在")
     text = (payload.get("text") or "").strip()
     if not text:
         raise HTTPException(status_code=400, detail="批注内容不能为空")
-    return db.add_comment(task_id, text,
-                          author=(payload.get("author") or "").strip(),
-                          quote=(payload.get("quote") or "").strip())
+    comment = db.add_comment(task_id, text,
+                             author=(payload.get("author") or "").strip(),
+                             quote=(payload.get("quote") or "").strip())
+    audit.log("comment_add", user_id, comment.get("id", ""), _ip(request))
+    return comment
 
 
 @app.get("/api/tasks/{task_id}/comments")
-def list_comments(task_id: str) -> list[dict]:
-    if not db.get_task(task_id):
+def list_comments(task_id: str, user: dict | None = Depends(get_current_user)) -> list[dict]:
+    if not db.get_task(task_id, user_id=user["id"] if user else None):
         raise HTTPException(status_code=404, detail="任务不存在")
     return db.list_comments(task_id)
 
 
 @app.delete("/api/tasks/{task_id}/comments/{comment_id}")
-def delete_comment(task_id: str, comment_id: str) -> dict:
-    if not db.get_task(task_id):
+def delete_comment(task_id: str, comment_id: str,
+                   request: Request,
+                   user: dict | None = Depends(get_current_user)) -> dict:
+    user_id = user["id"] if user else None
+    if not db.get_task(task_id, user_id=user_id):
         raise HTTPException(status_code=404, detail="任务不存在")
     if not db.delete_comment(comment_id):
         raise HTTPException(status_code=404, detail="批注不存在")
+    audit.log("comment_delete", user_id, comment_id, _ip(request))
     return {"deleted": True}
 
 
+# --------------------------------------------------------------------------- 检索（M2/TG-4）
 @app.get("/api/minutes")
 def search_minutes(q: str = "", from_: str | None = Query(None, alias="from"),
-                   to: str | None = None, topic: str | None = None) -> list[dict]:
-    """纪要历史列表 / 搜索（TG-6）：q 关键词、from/to 时间、topic 主题。"""
-    return db.search_minutes(q, from_, to, topic)
+                   to: str | None = None, topic: str | None = None,
+                   user: dict | None = Depends(get_current_user)) -> list[dict]:
+    return db.search_minutes(q, from_, to, topic,
+                             user_id=user["id"] if user else None)
+
+
+# --------------------------------------------------------------------------- 成本（TG-6）
+@app.get("/api/costs")
+def list_costs(day: str | None = None,
+               user: dict | None = Depends(get_current_user)) -> dict:
+    user_id = user["id"] if user else None
+    stats = db.list_cost_stats(user_id=user_id, day=day)
+    over, spent_today = cost.check_daily_limit(user_id=user_id)
+    return {
+        "stats": stats,
+        "daily_spent_rmb": spent_today,
+        "daily_limit_rmb": config.COST_LIMIT_DAILY_RMB,
+        "over_limit": over,
+        "per_task_limit_rmb": config.COST_LIMIT_PER_TASK_RMB,
+        "auto_pause": config.COST_AUTO_PAUSE,
+    }
+
+
+def _ip(request: Request | None) -> str:
+    if request is None or request.client is None:
+        return ""
+    return request.client.host or ""

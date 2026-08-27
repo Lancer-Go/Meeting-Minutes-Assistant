@@ -11,19 +11,23 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-from app import audio, config
-from app.asr import get_asr_provider, has_cloud_credentials as asr_has_creds
+from app import audio, config, cost
+from app import metrics as metrics_mod
+from app.asr import get_asr_provider
+from app.asr import has_cloud_credentials as asr_has_creds
 from app.diarization import (
     assign_speakers,
     distinct_speakers,
     get_diarization_provider,
     has_speakers,
 )
-from app.extractor import get_extractor_provider, has_cloud_credentials as extractor_has_creds
+from app.extractor import get_extractor_provider
+from app.extractor import has_cloud_credentials as extractor_has_creds
 from app.render import render_minutes
 from app.role import identify_roles
 from app.schemas import StructuredMinute
-from app.summary import get_llm_provider, has_cloud_credentials as llm_has_creds
+from app.summary import get_llm_provider
+from app.summary import has_cloud_credentials as llm_has_creds
 
 # 估算价格（列表价，仅作量级估算，实际以账单为准）
 ASR_PRICE_RMB_PER_MIN = {
@@ -115,6 +119,8 @@ def run(input_path: Path, out_dir: Path, asr_name: str, llm_name: str,
     t0 = time.time()
     transcript = asr_provider.transcribe(wav, progress_callback=_asr_progress)
     metrics["asr_elapsed_s"] = round(time.time() - t0, 2)
+    metrics_mod.observe_asr(metrics["asr_elapsed_s"])
+    metrics_mod.add_asr_seconds(audio_minutes * 60)
 
     # 3) 说话人分离（M2）：云 ASR 未返回 speaker 时，走 diarization provider 兜底
     if not has_speakers(transcript.segments):
@@ -150,6 +156,14 @@ def run(input_path: Path, out_dir: Path, asr_name: str, llm_name: str,
     extracted = extractor_provider.extract(transcript)
     extractor_elapsed = time.time() - t0
 
+    # M3（TG-6）：采集 LLM / 抽取器 token 用量
+    llm_usage = getattr(llm_provider, "last_usage", {}) or {}
+    ext_usage = getattr(extractor_provider, "last_usage", {}) or {}
+    tokens_in = llm_usage.get("prompt_tokens", 0) + ext_usage.get("prompt_tokens", 0)
+    tokens_out = llm_usage.get("completion_tokens", 0) + ext_usage.get("completion_tokens", 0)
+    tokens_cache = llm_usage.get("cached_tokens", 0) + ext_usage.get("cached_tokens", 0)
+    metrics_mod.observe_minute(llm_elapsed + extractor_elapsed)
+
     structured = StructuredMinute(
         title=title,
         summary_md=body_md,
@@ -176,13 +190,21 @@ def run(input_path: Path, out_dir: Path, asr_name: str, llm_name: str,
             render_minutes(structured, tname, meta, transcript_text), encoding="utf-8")
 
     # 7) 指标汇总
-    asr_cost, llm_cost = estimate_cost(asr_name, audio_minutes, llm_name, transcript.char_count)
+    _, llm_cost_est = estimate_cost(asr_name, audio_minutes, llm_name, transcript.char_count)
+    # M3（TG-6）：真实 token 成本（有 usage 时按 A6 价），否则沿用估算
+    llm_model = getattr(llm_provider, "model", "") or ""
+    if tokens_in or tokens_out or tokens_cache:
+        llm_cost_real = cost.llm_cost_rmb(llm_model, tokens_in, tokens_out, tokens_cache)
+    else:
+        llm_cost_real = llm_cost_est
+    asr_cost_real = cost.asr_cost_rmb(audio_minutes) if asr_name in ("tencent", "aliyun", "iflytek") else 0.0
+    total_cost = round(llm_cost_real + asr_cost_real, 4)
     metrics.update({
         "audio_duration_min": round(audio_minutes, 2),
         "asr": {"provider": transcript.provider, "model": transcript.model,
-                "elapsed_s": metrics["asr_elapsed_s"], "cost_rmb": round(asr_cost, 4)},
-        "llm": {"provider": llm_name, "model": getattr(llm_provider, "model", ""),
-                "elapsed_s": round(llm_elapsed, 2), "cost_rmb": round(llm_cost, 4)},
+                "elapsed_s": metrics["asr_elapsed_s"], "cost_rmb": round(asr_cost_real, 4)},
+        "llm": {"provider": llm_name, "model": llm_model,
+                "elapsed_s": round(llm_elapsed, 2), "cost_rmb": round(llm_cost_real, 4)},
         "extractor": {"provider": extractor_name,
                       "model": getattr(extractor_provider, "model", ""),
                       "elapsed_s": round(extractor_elapsed, 2)},
@@ -195,7 +217,12 @@ def run(input_path: Path, out_dir: Path, asr_name: str, llm_name: str,
         },
         "total_elapsed_s": round(metrics["audio_elapsed_s"] + metrics["asr_elapsed_s"]
                                  + llm_elapsed + extractor_elapsed, 2),
-        "total_cost_rmb": round(asr_cost + llm_cost, 4),
+        "total_cost_rmb": total_cost,
+        "llm_tokens_in": tokens_in,
+        "llm_tokens_out": tokens_out,
+        "llm_tokens_cache": tokens_cache,
+        "llm_cost_rmb": round(llm_cost_real, 6),
+        "asr_cost_rmb": round(asr_cost_real, 6),
         "ratio_elapsed_to_duration": round(
             (metrics["audio_elapsed_s"] + metrics["asr_elapsed_s"] + llm_elapsed + extractor_elapsed)
             / max(audio_minutes * 60, 1e-6), 3),

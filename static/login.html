@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登录 - 会议纪要助手</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#ffffff; --fg:#1f2328; --muted:#6b7280;
+          --accent:#2563eb; --border:#e5e7eb; --err:#dc2626; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+         background:var(--bg); color:var(--fg); }
+  main { max-width:360px; margin:12vh auto; padding:0 20px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:12px;
+          padding:28px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  .sub { color:var(--muted); font-size:13px; margin:0 0 20px; }
+  label { display:block; font-size:13px; margin:12px 0 4px; color:var(--muted); }
+  input { width:100%; padding:10px; border:1px solid var(--border); border-radius:8px;
+          background:var(--card); font-size:14px; }
+  button { width:100%; margin-top:20px; padding:11px; border:none; border-radius:8px;
+           background:var(--accent); color:#fff; font-size:14px; cursor:pointer; }
+  .msg { font-size:13px; margin-top:12px; }
+  .msg.err { color:var(--err); }
+  .foot { text-align:center; font-size:13px; color:var(--muted); margin-top:14px; }
+  .foot a { color:var(--accent); text-decoration:none; }
+</style>
+</head>
+<body>
+<main>
+  <div class="card">
+    <h1>登录</h1>
+    <p class="sub">会议纪要助手 · 云端 SaaS</p>
+    <label for="username">用户名</label>
+    <input type="text" id="username" autocomplete="username" placeholder="用户名">
+    <label for="password">密码</label>
+    <input type="password" id="password" autocomplete="current-password" placeholder="密码">
+    <button id="loginBtn">登录</button>
+    <div id="msg" class="msg"></div>
+    <div class="foot">没有账号？<a href="/register.html">注册</a></div>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+
+async function doLogin() {
+  const username = $('username').value.trim();
+  const password = $('password').value;
+  if (!username || !password) { setMsg('请输入用户名和密码', true); return; }
+  try {
+    const resp = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) { setMsg(data.detail || '登录失败', true); return; }
+    localStorage.setItem('mma_token', data.token);
+    location.href = '/';
+  } catch (e) { setMsg(e.message, true); }
+}
+
+function setMsg(text, isErr) {
+  const el = $('msg');
+  el.textContent = text;
+  el.className = 'msg' + (isErr ? ' err' : '');
+}
+
+$('loginBtn').addEventListener('click', doLogin);
+$('password').addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
+</script>
+</body>
+</html>
