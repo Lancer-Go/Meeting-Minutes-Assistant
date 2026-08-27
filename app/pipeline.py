@@ -116,8 +116,27 @@ def run(input_path: Path, out_dir: Path, asr_name: str, llm_name: str,
         else:
             _report(pct, f"语音转写：已处理 {done}/{total} 秒")
 
+    # 云 ASR URL 识别（SourceType=0）：音频上传到公网对象存储后整段一次提交，
+    # 全局话者分离（无切片），避免切片导致的说话人过度切分。失败/未配置则回退 base64 切片。
+    asr_url = None
+    if asr_name == "tencent" and config.ASR_URL_ENABLED:
+        from app.storage import get_storage
+        try:
+            storage = get_storage()
+            if storage.s3:
+                key = f"asr/{out_dir.name}/audio.wav"
+                storage.put_file(key, wav)
+                asr_url = storage.presigned_url(key)
+        except Exception as e:  # noqa: BLE001 — URL 模式失败回退切片
+            metrics["asr_url_error"] = str(e)
+            asr_url = None
+        metrics["asr_url_mode"] = bool(asr_url)
+
     t0 = time.time()
-    transcript = asr_provider.transcribe(wav, progress_callback=_asr_progress)
+    if asr_url:
+        transcript = asr_provider.transcribe(wav, progress_callback=_asr_progress, url=asr_url)
+    else:
+        transcript = asr_provider.transcribe(wav, progress_callback=_asr_progress)
     metrics["asr_elapsed_s"] = round(time.time() - t0, 2)
     metrics_mod.observe_asr(metrics["asr_elapsed_s"])
     metrics_mod.add_asr_seconds(audio_minutes * 60)

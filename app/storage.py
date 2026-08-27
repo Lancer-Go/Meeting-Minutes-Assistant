@@ -117,6 +117,18 @@ class Storage:
         p = config.DATA_DIR / key
         return p.read_bytes() if p.exists() else None
 
+    def presigned_url(self, key: str, expires: int = 3600) -> str | None:
+        """S3 模式：生成预签名 GET URL（供云 ASR URL 识别拉取音频）。本地模式返回 None。
+
+        注意：URL 只有公网可达时才可被云 ASR 下载（本地 MinIO/内网地址无效）。
+        """
+        if not self.s3:
+            return None
+        key = key.lstrip("/")
+        return self._s3_client().generate_presigned_url(
+            "get_object", Params={"Bucket": self.bucket, "Key": key}, ExpiresIn=expires
+        )
+
     def sync_dir(self, local_dir: Path, prefix: str) -> int:
         """把本地目录所有文件同步到对象存储（S3 模式），返回文件数。本地模式 no-op。"""
         if not self.s3:

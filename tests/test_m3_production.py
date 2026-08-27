@@ -75,6 +75,23 @@ def test_storage_local_put_file(tmp_data_dir, tmp_path):
     assert s.exists("tasks/t1/a.txt")
 
 
+def test_storage_presigned_url_local_none():
+    s = storage.Storage(s3=False)
+    assert s.presigned_url("a/b.wav") is None
+
+
+def test_storage_presigned_url_s3(monkeypatch):
+    s = storage.Storage(s3=True, endpoint="http://x", bucket="b",
+                        access_key="ak", secret_key="sk")
+
+    class _Fake:
+        def generate_presigned_url(self, op, Params=None, ExpiresIn=3600):
+            return f"https://x/{Params['Bucket']}/{Params['Key']}?sig"
+
+    monkeypatch.setattr(s, "_s3_client", lambda: _Fake())
+    assert "https://x/b/a/b.wav" in s.presigned_url("a/b.wav")
+
+
 # --------------------------------------------------------------------------- TG-2 · db（users / audit / cost）
 def test_db_users_and_audit(tmp_data_dir):
     db.init_db()

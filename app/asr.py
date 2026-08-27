@@ -136,56 +136,63 @@ class TencentASR(ASRProvider):
         if not (self.secret_id and self.secret_key):
             raise RuntimeError("缺少 TENCENT_SECRET_ID / TENCENT_SECRET_KEY（腾讯云）。请在 .env 配置后重试。")
 
-    def _recognize_chunk(self, wav: Path) -> list[Segment]:
-        """识别单段音频（base64 ≤5MB），返回段内相对时间的 segments。"""
-        import base64
-
-        from tencentcloud.asr.v20190614 import asr_client, models
+    def _client(self):
+        from tencentcloud.asr.v20190614 import asr_client
         from tencentcloud.common import credential
         from tencentcloud.common.profile.client_profile import ClientProfile
 
-        raw = Path(wav).read_bytes()
-        if len(raw) > 3_750_000:  # base64 后约 5MB（接口上限）
-            raise RuntimeError(
-                f"腾讯云单段音频上限 base64 ≤5MB，当前 {len(raw) / 1e6:.1f}MB 超限。"
-                f"请减小切片时长（当前 {self.chunk_seconds}s）。"
-            )
-
         cred = credential.Credential(self.secret_id, self.secret_key)
         cp = ClientProfile()
-        client = asr_client.AsrClient(cred, "ap-guangzhou", cp)
+        return asr_client.AsrClient(cred, "ap-guangzhou", cp)
+
+    def _build_request(self, *, source_type: int, url: str = "",
+                       wav: Path | None = None):
+        """构造 CreateRecTask 请求（SourceType 0=URL / 1=base64 数据）。"""
+        import base64
+
+        from tencentcloud.asr.v20190614 import models
 
         req = models.CreateRecTaskRequest()
         req.EngineModelType = self.engine
         req.ChannelNum = 1
-        req.ResTextFormat = 3     # 含标点 + 分句时间戳（ResultDetail.FinalSentence/StartMs/EndMs）
-        req.SourceType = 1        # 音频数据（base64）
-        req.Data = base64.b64encode(raw).decode()
-        req.DataLen = len(raw)
+        req.ResTextFormat = 3  # 含标点 + 分句时间戳（ResultDetail.FinalSentence/StartMs/EndMs）
+        req.SourceType = source_type
+        if source_type == 0:
+            req.Url = url
+        else:
+            raw = Path(wav).read_bytes()
+            if len(raw) > 3_750_000:  # base64 后约 5MB（接口上限）
+                raise RuntimeError(
+                    f"腾讯云单段音频上限 base64 ≤5MB，当前 {len(raw) / 1e6:.1f}MB 超限。"
+                    f"请减小切片时长（当前 {self.chunk_seconds}s）。"
+                )
+            req.Data = base64.b64encode(raw).decode()
+            req.DataLen = len(raw)
         if self.speaker_diarization:
             try:  # 开启话者分离（若 SDK/接口支持，结果含 SpeakerId）
                 req.SpeakerDiarization = 1
             except Exception:  # noqa: BLE001 — 旧版 SDK 无此字段则忽略
                 pass
+        return req
 
-        resp = client.CreateRecTask(req)
-        task_id = resp.Data.TaskId
+    def _poll_result(self, client, task_id):
+        """轮询识别任务直到成功/失败，返回 DescribeTaskStatus 响应。"""
+        from tencentcloud.asr.v20190614 import models
 
         deadline = time.time() + 600
-        sresp = None
         while time.time() < deadline:
             st = models.DescribeTaskStatusRequest()
             st.TaskId = task_id
             sresp = client.DescribeTaskStatus(st)
             status = sresp.Data.Status  # 0 等待 / 1 执行中 / 2 成功 / 3 失败
             if status == 2:
-                break
+                return sresp
             if status == 3:
                 raise RuntimeError(f"腾讯云转写失败: {sresp.Data.ErrorMsg}")
             time.sleep(2)
-        else:
-            raise TimeoutError("腾讯云转写超时（>10min）")
+        raise TimeoutError("腾讯云转写超时（>10min）")
 
+    def _segments_from_response(self, sresp) -> list[Segment]:
         segs = []
         for r in sresp.Data.ResultDetail or []:
             segs.append(Segment(float(r.StartMs) / 1000.0, float(r.EndMs) / 1000.0,
@@ -193,11 +200,32 @@ class TencentASR(ASRProvider):
                                 speaker=_speaker_to_str(getattr(r, "SpeakerId", None))))
         return segs
 
-    def transcribe(self, wav: Path, progress_callback=None) -> Transcript:
+    def _recognize_chunk(self, wav: Path) -> list[Segment]:
+        """识别单段音频（base64 ≤5MB），返回段内相对时间的 segments。"""
+        client = self._client()
+        req = self._build_request(source_type=1, wav=wav)
+        resp = client.CreateRecTask(req)
+        return self._segments_from_response(self._poll_result(client, resp.Data.TaskId))
+
+    def _recognize_url(self, url: str) -> list[Segment]:
+        """URL 识别（SourceType=0）：整段音频一次提交，无 base64 5MB 限制、无需切片，
+        话者分离在全局音频上完成（避免切片导致的过度切分）。"""
+        client = self._client()
+        req = self._build_request(source_type=0, url=url)
+        resp = client.CreateRecTask(req)
+        return self._segments_from_response(self._poll_result(client, resp.Data.TaskId))
+
+    def transcribe(self, wav: Path, progress_callback=None,
+                   url: str | None = None) -> Transcript:
         t0 = time.time()
         wav = Path(wav)
-        # 超切片时长或超 base64 上限 → 切片逐段识别
-        if (audio.get_duration(wav) > self.chunk_seconds + 5
+        if url:
+            # URL 模式：整段一次提交，全局话者分离（无切片，避免过度切分）
+            all_segs = self._recognize_url(url)
+            text = "".join(s.text for s in all_segs)
+            if progress_callback:
+                progress_callback(1, 1)
+        elif (audio.get_duration(wav) > self.chunk_seconds + 5
                 or wav.stat().st_size > 3_750_000):
             chunks = audio.split_wav(wav, self.chunk_seconds, wav.parent / "chunks")
             all_segs: list[Segment] = []

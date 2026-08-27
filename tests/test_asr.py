@@ -36,6 +36,37 @@ def test_speaker_to_str_keeps_zero():
     assert _speaker_to_str("0") == "0"
 
 
+def test_tencent_build_request_url_mode():
+    from app.asr import TencentASR
+    p = TencentASR(secret_id="id", secret_key="key")
+    req = p._build_request(source_type=0, url="https://example.com/a.wav")
+    assert req.SourceType == 0
+    assert req.Url == "https://example.com/a.wav"
+
+
+def test_tencent_build_request_base64_sets_data(tmp_path):
+    from app.asr import TencentASR
+    p = TencentASR(secret_id="id", secret_key="key")
+    wav = tmp_path / "a.wav"
+    wav.write_bytes(b"RIFFxxxx")
+    req = p._build_request(source_type=1, wav=wav)
+    assert req.SourceType == 1
+    assert req.Data  # base64 非空
+    assert req.DataLen == 8
+
+
+def test_tencent_transcribe_url_mode(monkeypatch):
+    from app.asr import TencentASR
+    p = TencentASR(secret_id="id", secret_key="key")
+    calls = []
+    monkeypatch.setattr(p, "_recognize_url",
+                        lambda url: calls.append(url) or [Segment(0, 1, "你好", speaker="0")])
+    t = p.transcribe("unused.wav", url="https://example.com/a.wav")
+    assert calls == ["https://example.com/a.wav"]
+    assert t.segments[0].speaker == "0"
+    assert t.text == "你好"
+
+
 def test_get_provider_whisper():
     assert get_asr_provider("whisper").name == "whisper"
 

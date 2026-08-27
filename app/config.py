@@ -73,6 +73,10 @@ EXTRACTOR_FALLBACK = "rule"
 # --------------------------------------------------------------------------- 腾讯云切片
 # 录音文件识别 base64 ≤5MB（≈2min 16kHz WAV），长音频按此切片逐段识别再合并。
 ASR_CHUNK_SECONDS = float(os.getenv("MMA_ASR_CHUNK_SECONDS", "100"))
+# 云 ASR URL 识别（SourceType=0）：音频落在公网可下载的对象存储时，整段一次提交（无切片、
+# 全局话者分离，避免切片导致的说话人过度切分）。需同时配置 S3_ENDPOINT 且其地址公网可达
+# （生产 COS/S3 或公网 MinIO）；本地 MinIO/localhost 不可达，保持关闭走 base64 切片。
+ASR_URL_ENABLED = _bool("MMA_ASR_URL_ENABLED", "false")
 
 # --------------------------------------------------------------------------- M3 · 存储（TG-2）
 # DATABASE_URL 驱动 SQLAlchemy：空 = 沿用 SQLite DB_PATH（本地开发）；postgresql:// 生产。
