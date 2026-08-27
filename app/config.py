@@ -121,3 +121,22 @@ COST_AUTO_PAUSE = _bool("COST_AUTO_PAUSE", "false")                          # �
 
 # --------------------------------------------------------------------------- M3 · 可观测（TG-3）
 METRICS_ENABLED = _bool("MMA_METRICS_ENABLED", "true")
+
+# --------------------------------------------------------------------------- M4 · 智能化（TG-0~TG-3）
+# 模型注册表：MMA_LLM_ALIAS 指定当前云端 LLM 模型别名（v4-pro 主 / v4-flash 降本 / qwen-plus 备选）。
+# 改此环境变量即可热切换 summary 与 extractor 的模型，无需改代码（ASR 维持现状）。
+MMA_LLM_ALIAS = os.getenv("MMA_LLM_ALIAS", "v4-pro")
+MMA_LLM_MODEL = os.getenv("MMA_LLM_MODEL", "")          # 覆盖注册表具体模型名（空 = 用注册表默认）
+MMA_QWEN_MODEL = os.getenv("MMA_QWEN_MODEL", "qwen-plus")
+
+# Embedding（TG-2）：OpenAI 兼容云 API（如 bge-m3）。base_url 与 api_key 均配置才启用；
+# 缺任一 → 纪要向量化跳过、RAG 降级关键词检索（不阻断主链路）。
+MMA_EMBEDDING_BASE_URL = os.getenv("MMA_EMBEDDING_BASE_URL", "")
+MMA_EMBEDDING_API_KEY = os.getenv("MMA_EMBEDDING_API_KEY", "")
+MMA_EMBEDDING_MODEL = os.getenv("MMA_EMBEDDING_MODEL", "bge-m3")
+MMA_EMBEDDING_DIM = int(os.getenv("MMA_EMBEDDING_DIM", "1024"))
+
+# RAG（TG-3）
+MMA_RAG_TOP_K = int(os.getenv("MMA_RAG_TOP_K", "5"))
+MMA_RAG_CHUNK_CHARS = int(os.getenv("MMA_RAG_CHUNK_CHARS", "800"))
+MMA_RAG_CHUNK_OVERLAP = int(os.getenv("MMA_RAG_CHUNK_OVERLAP", "200"))

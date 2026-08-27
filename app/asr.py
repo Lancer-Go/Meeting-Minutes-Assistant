@@ -54,6 +54,20 @@ class Transcript:
             "text": self.text,
         }
 
+    @classmethod
+    def from_dict(cls, data: dict) -> Transcript:
+        """从 to_dict 输出重建 Transcript（M4 regen 用）。"""
+        d = data or {}
+        return cls(
+            segments=[Segment(**s) for s in d.get("segments", [])],
+            text=d.get("text", ""),
+            provider=d.get("provider", ""),
+            model=d.get("model", ""),
+            elapsed_s=float(d.get("elapsed_s", 0.0) or 0.0),
+            cost_rmb=float(d.get("cost_rmb", 0.0) or 0.0),
+            speakers=list(d.get("speakers", []) or []),
+        )
+
 
 class ASRProvider(ABC):
     """ASR 供应商统一接口（M4 可插拔的基础）。"""

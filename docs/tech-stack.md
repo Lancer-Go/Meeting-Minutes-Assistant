@@ -2,7 +2,7 @@
 
 | 文档类型 | 技术栈与技术设计 |
 | --- | --- |
-| 版本 / 状态 | v0.9（M3 生产化已落地 + M2 角色识别/话者分离修复 + 腾讯云 COS 接入 ASR URL 识别）✅ |
+| 版本 / 状态 | v0.10（M4 智能化已落地：LLM 多模型热切换 + 检索问答 RAG）✅ |
 | 关联文档 | [mission](mission.md) · [roadmap](roadmap.md) · [选型决策记录](decisions/选型决策记录.md) |
 
 > 说明：本文汇总技术选型（Part A）与技术设计（Part B：需求、架构、方案、数据、测试、部署）。标记 🔶【建议】为倾向方案，✅【已定】为已决项。关键决策（云端 SaaS 优先 / 走云 API / 中文为主 / ≤ 2 小时 / 利润 0 性价比优先）见 [mission.md §8](mission.md)，具体厂商已由 M0 实测锁定，见 [decisions/选型决策记录.md](decisions/选型决策记录.md)。
@@ -61,8 +61,9 @@
 
 | 方案 | 特点 | 建议 |
 | --- | --- | --- |
-| **DeepSeek-V4 Pro（deepseek-v4-pro）** | 中文强、Agent 能力增强、1M 上下文；性价比高（M0 实测 V3，2026-08-25 升级 V4 Pro；成本与计费见 A6） | ✅ 已锁定 |
-| Qwen（通义千问） | 中文好、性价比高 | 🔶 备选（待密钥，未测） |
+| **DeepSeek-V4 Pro（deepseek-v4-pro）** | 中文强、Agent 能力增强、1M 上下文；性价比高（M0 实测 V3，2026-08-25 升级 V4 Pro；成本与计费见 A6） | ✅ 已锁定（主模型） |
+| **DeepSeek-V4 Flash（deepseek-v4-flash）** | 价格约 Pro 1/3、并发上限更高（2500）、质量略低 | ✅ 已落地（M4 降本通道） |
+| Qwen（通义千问） | 中文好、性价比高 | ✅ 已落地（M4 备选，含 Function-Calling 抽取） |
 | GLM / Kimi | 国产、长文本友好 | 候选 |
 | GPT-4o / Claude | 通用能力强、成本较高 | 候选（对标外企场景） |
 
@@ -81,13 +82,23 @@
 | Jinja2 模板 ✅ | 模板化渲染（M2 已落地三套模板：标准 / 精简 / 详细） |
 | **Pandoc** | MD → PDF / docx（🕐 后期再看） |
 
+#### 文本向量化与检索问答（M4 新增）
+
+| 方案 | 说明 | 建议 |
+| --- | --- | --- |
+| **pgvector** | PostgreSQL 向量扩展（`CREATE EXTENSION vector`），复用现有 PG 零新增服务 | ✅ 已落地（M4；compose 换 `pgvector/pgvector:pg16` + 初始化脚本） |
+| 向量存储备选（Milvus / Weaviate） | 独立向量库，运维重 | ❌ 不采用（利润 0 性价比优先） |
+| **云 Embedding API** | OpenAI 兼容接口（如 bge-m3，1024 维），按量计费免运维 | ✅ 已落地（M4 `EmbeddingProvider` 抽象 + OpenAI 兼容实现） |
+| 检索方式 | 余弦相似度 top-k（`minute_embeddings.embedding` 存 JSON 文本列，Python 余弦计算，跨 SQLite/PG 可移植） | ✅ 已落地（M4；生产可迁原生 `vector(1024)` + HNSW 索引提升规模） |
+| 降级兜底 | 无 embedding 密钥 / SQLite 模式 → 关键词检索兜底（复用 M2 `search_minutes`） | ✅ 已落地（M4） |
+
 ### A3. 基础设施选型
 
 | 模块 | 方案 🔶建议 | 说明 |
 | --- | --- | --- |
 | Web 框架 | **FastAPI** ✅ | M1 已落地（异步、类型友好） |
 | 任务队列 | FastAPI BackgroundTasks（M1）→ **Celery + Redis** ✅ | M3 已落地（API 入队 / worker 消费 / 状态回写；本地开发回退 BackgroundTasks） |
-| 存储 | 本地文件系统 + SQLite（M1/M2）→ **PostgreSQL + MinIO / 腾讯云 COS** ✅ | M3 已落地（SQLAlchemy 双模式 sqlite:///postgresql://，boto3 S3 兼容对象存储 + 本地 FS 兜底）；已接入腾讯云 COS（`S3_ADDRESSING_STYLE=virtual`，供 ASR URL 识别承载音频） |
+| 存储 | 本地文件系统 + SQLite（M1/M2）→ **PostgreSQL + MinIO / 腾讯云 COS** ✅ | M3 已落地（SQLAlchemy 双模式 sqlite:///postgresql://，boto3 S3 兼容对象存储 + 本地 FS 兜底）；已接入腾讯云 COS（`S3_ADDRESSING_STYLE=virtual`，供 ASR URL 识别承载音频）；M4 换 `pgvector/pgvector:pg16` 启用向量扩展（检索问答） |
 | 容器化 | **Docker / Docker Compose** ✅ | M3 已落地多服务编排（api / worker / redis / postgres / minio / prometheus / grafana） |
 | 编排（云端） | Kubernetes | Worker 可扩缩已通过 `--scale worker=N` 预留（M3 架构预留，K8s 留真实多机需要） |
 | 可观测 | 结构化日志（✅ M1）+ **Prometheus + Grafana** ✅ | M3 已落地 `/metrics` + 采集 + 面板 + 告警规则（webhook/邮件） |
@@ -108,8 +119,10 @@
 | 决策点 | 已定方向 | 锁定结论 |
 | --- | --- | --- |
 | ASR 主方案 | ✅ 云 API（接受数据出域） | ✅ **腾讯云 16k_zh**（中英混用最优、批量录音文件识别）；备选阿里云 NLS；本地兜底 faster-whisper |
-| LLM 主方案 | ✅ 性价比高（利润 0） | ✅ **DeepSeek-V4 Pro（deepseek-v4-pro）**（纪要质量更优，由 V3 升级）；备选 Qwen（待密钥）；计费与单场成本估算见 A6 |
+| LLM 主方案 | ✅ 性价比高（利润 0） | ✅ **DeepSeek-V4 Pro（deepseek-v4-pro）** 主 + **deepseek-v4-flash** 降本 + **Qwen** 备选（M4 经 `MMA_LLM_ALIAS` 配置化热切换）；计费与单场成本估算见 A6 |
 | 部署形态 | ✅ 云端 SaaS 优先 | ✅ **腾讯云服务器 + Docker Compose 单机多服务**（M3 已落地：Worker 独立容器可 `--scale` 扩缩、存储外置；K8s 留真实多机需要） |
+
+> **M4 智能化选型（用户 2026-08-27 确认）**：聚焦「多模型切换 + 检索问答 RAG」两项（G6 IM/待办同步、G7 实时转写留后期）；向量存储 **pgvector**（复用现有 PostgreSQL，零新增服务）；Embedding 走**云 API**（OpenAI 兼容，如 bge-m3，按量计费）；**仅 LLM 侧热切换**（ASR 维持腾讯云 16k_zh 现状）。
 
 ### A6. 成本模型与计费参考（DeepSeek LLM）
 
@@ -224,8 +237,11 @@ flowchart TB
 | **audio** | 视频抽音轨、采样率/声道归一化、静音检测 | FFmpeg / pydub |
 | **asr** | 语音转文本、说话人分离、时间戳 | 腾讯云 16k_zh（备选阿里云 NLS） |
 | **nlp** | 文本清洗、分段、角色识别、关键词 | spaCy / 规则 + LLM |
-| **summary** | LLM 纪要生成、模板化 | DeepSeek-V4 Pro（deepseek-v4-pro）（备选 Qwen） |
-| **extractor** | 决议/行动项/负责人/截止时间抽取 | LLM Function-Call / JSON Schema |
+| **summary** | LLM 纪要生成、模板化 | DeepSeek-V4 Pro / Flash（备选 Qwen），经 `llm_registry` 注册表热切换 |
+| **extractor** | 决议/行动项/负责人/截止时间抽取 | LLM Function-Call / JSON Schema（DeepSeek / Qwen 注册表驱动） |
+| **llm_registry** | 模型注册表：别名 → provider/base_url/model/api_key，`MMA_LLM_ALIAS` 配置化热切换 | 新增（M4） |
+| **embedding** | 文本向量化（OpenAI 兼容云 API）+ 纪要切块索引 | 新增（M4） |
+| **rag** | 检索问答：向量/关键词检索 + 带引用答案生成 + 越权隔离 + 降级 | 新增（M4） |
 | **render** | 纪要渲染为 Markdown | Markdown / Jinja2（Pandoc 后期） |
 | **orchestrator** | 任务状态机、队列调度、重试 | FastAPI BackgroundTasks（M1）/ **Celery + Redis**（M3 已落地） |
 | **storage** | 原始文件、中间产物、纪要持久化 | 本地 FS + SQLite（M1）/ **PostgreSQL + MinIO / 腾讯云 COS**（M3 已落地，boto3 S3 兼容封装 + virtual 寻址 + `presigned_url`，本地 FS 兜底） |
@@ -276,8 +292,9 @@ ffmpeg -i input.mp4 -vn -ac 1 -ar 16000 -f wav output.wav
 | User | id, username, password_hash, created_at | ✅ M3 已落地（自建账号，bcrypt 哈希） |
 | AuditLog | id, user_id, action, target, ip, created_at | ✅ M3 已落地（登录/任务/编辑/批注留痕） |
 | CostStat | id, task_id, user_id, date, llm_tokens_in/out/cache, llm_cost, asr_cost, total_cost | ✅ M3 已落地（按场/按日成本统计，联动限额告警） |
+| MinuteEmbedding | id, minute_id, task_id, user_id, chunk_index, text, embedding(JSON 文本列), created_at | ✅ M4 已落地（纪要切块向量索引；pgvector 扩展启用，检索用余弦 top-k） |
 
-**ER 关系**：`TASK 1—N SEGMENT`；`TASK 1—0..1 MINUTE`；`MINUTE 1—N ACTION / DECISION`。
+**ER 关系**：`TASK 1—N SEGMENT`；`TASK 1—0..1 MINUTE`；`MINUTE 1—N ACTION / DECISION`；`MINUTE 1—N EMBEDDING_CHUNK`。
 
 **RESTful API**
 
@@ -298,13 +315,14 @@ ffmpeg -i input.mp4 -vn -ac 1 -ar 16000 -f wav output.wav
 | POST | `/api/auth/login` | 登录（返回 JWT，PyJWT HS256） | ✅ M3 |
 | GET | `/api/costs` | 成本统计（按日累计 / 明细 / 限额状态） | ✅ M3 |
 | GET | `/metrics` | Prometheus 指标端点 | ✅ M3 |
-| POST | `/api/tasks/{id}/regen` | 重新生成（换模型/模板） | 🕐 后期 |
+| POST | `/api/tasks/{id}/regen` | 重新生成（换模型/模板，越权校验，重生成后重新向量化） | ✅ M4 |
+| POST | `/api/qa` | 检索问答（带来源引用、user_id 越权隔离、降级兜底） | ✅ M4 |
 
 ### B5. 测试策略
 
 | 层级 | 重点 | 手段 |
 | --- | --- | --- |
-| 单元测试 | 纯逻辑、提示词解析、字段校验 | pytest（✅ 覆盖率 M1 78% → M2 82% → M3 81%，含 auth/storage/metrics/cost） |
+| 单元测试 | 纯逻辑、提示词解析、字段校验 | pytest（✅ 覆盖率 M1 78% → M2 82% → M3 81% → **M4 82%**，含 llm_registry/embedding/rag） |
 | 集成测试 | 音频→ASR→LLM 全链路 | 真实样例 + mock provider |
 | 评测集 (Eval Set) | 纪要质量、行动项准确率 | 人工标注黄金基准集 |
 | 性能测试 | 大文件、长会议、高并发 | **Locust**（M3 已落地 `locustfile.py`，压测以 mock ASR 为主控费） |
@@ -314,7 +332,7 @@ ffmpeg -i input.mp4 -vn -ac 1 -ar 16000 -f wav output.wav
 
 ### B6. 部署与运维
 
-- **容器化**：Docker Compose 多服务一键编排（✅ M3 已落地：api / worker / redis / postgres / minio / prometheus / grafana）；K8s 云端集群留真实多机需要。
+- **容器化**：Docker Compose 多服务一键编排（✅ M3 已落地：api / worker / redis / postgres / minio / prometheus / grafana）；K8s 云端集群留真实多机需要。M4 postgres 换 `pgvector/pgvector:pg16` 启用向量扩展。
 - **CI/CD**：GitHub Actions（lint → test → build → GHCR 镜像发布）—— ✅ M3 已落地（`.github/workflows/ci.yml`）。
 - **可观测**：结构化日志（JSON，✅ M1 `JsonFormatter`）+ `/metrics` + Prometheus 采集 + Grafana 面板 + 告警规则（✅ M3）。
 - **安全合规**：自建账号 + JWT、user_id 越权隔离、上传魔数校验、提示词注入缓解、AES-256（MinIO SSE + 应用层）+ TLS（Caddy 反代，✅ M3）。

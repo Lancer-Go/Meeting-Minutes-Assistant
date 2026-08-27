@@ -6,8 +6,10 @@
 """
 from __future__ import annotations
 
+import json
 import logging
 import time
+from datetime import datetime
 from pathlib import Path
 
 from app import config, cost, db, pipeline, storage
@@ -19,8 +21,19 @@ MAX_RETRIES = 3
 RETRY_BACKOFF_S = [1.0, 2.0, 4.0]
 
 
+def _index_minute(task_id: str, user_id: str | None, summary_md: str) -> None:
+    """M4 TG-2：纪要完成后自动向量化入库（失败不阻断主链路）。"""
+    try:
+        from app import embedding
+        n = embedding.index_minute(task_id, user_id, summary_md)
+        if n:
+            logger.info("task=%s 纪要向量化 %d 块", task_id, n)
+    except Exception:  # noqa: BLE001 — 向量化失败仅告警
+        logger.exception("task=%s 纪要向量化失败（不阻断）", task_id)
+
+
 def _persist_minute(task_id: str, out_dir: Path, title: str, user_id: str | None) -> None:
-    """读取 pipeline 产物，持久化结构化纪要到 minutes 表（TG-0/TG-5）。"""
+    """读取 pipeline 产物，持久化结构化纪要到 minutes 表（TG-0/TG-5）+ 向量化（M4 TG-2）。"""
     try:
         sm_path = out_dir / "structured_minute.json"
         structured_json = sm_path.read_text(encoding="utf-8") if sm_path.exists() else "{}"
@@ -29,6 +42,7 @@ def _persist_minute(task_id: str, out_dir: Path, title: str, user_id: str | None
         db.save_minute(task_id, title=title, template=config.DEFAULT_TEMPLATE,
                        summary_md=summary_md, structured_json=structured_json,
                        user_id=user_id)
+        _index_minute(task_id, user_id, summary_md)
     except Exception:
         logger.exception("task=%s 持久化纪要失败（不阻断任务）", task_id)
 
@@ -117,3 +131,66 @@ def run_task(task_id: str) -> None:
 
     db.update_fields(task_id, error=str(last_err))
     db.set_status(task_id, db.FAILED)
+
+
+def regen_minute(task_id: str, model_alias: str | None = None,
+                 template: str | None = None) -> dict:
+    """M4 TG-1：换模型/模板重生成纪要（summary + extractor + render + 重新向量化）。
+
+    model_alias 为空时用 `config.MMA_LLM_ALIAS`（当前主模型）。返回更新后的纪要 dict。
+    """
+    from app import embedding
+    from app.asr import Transcript
+    from app.extractor import get_extractor_provider
+    from app.render import render_minutes
+    from app.role import identify_roles
+    from app.schemas import StructuredMinute
+    from app.summary import get_llm_provider
+
+    task = db.get_task(task_id)
+    if not task:
+        raise KeyError(f"任务不存在: {task_id}")
+    out_dir = config.TASK_DIR / task_id
+    title = Path(task["source_file"]).stem
+    user_id = task.get("user_id")
+
+    tr_path = out_dir / "transcript.json"
+    if not tr_path.exists():
+        raise RuntimeError("转写尚未生成，无法重生成纪要")
+    transcript = Transcript.from_dict(json.loads(tr_path.read_text(encoding="utf-8")))
+
+    alias = model_alias or config.MMA_LLM_ALIAS
+    template = template or config.DEFAULT_TEMPLATE
+
+    llm_provider = get_llm_provider(alias)
+    body_md = llm_provider.summarize(transcript)
+
+    extractor_provider = get_extractor_provider(alias if alias != "extractive" else "rule")
+    extracted = extractor_provider.extract(transcript)
+
+    speakers = identify_roles(transcript.segments)
+    structured = StructuredMinute(
+        title=title, summary_md=body_md,
+        decisions=extracted.decisions, actions=extracted.actions,
+        open_questions=extracted.open_questions, speakers=speakers)
+    (out_dir / "structured_minute.json").write_text(
+        json.dumps(structured.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+
+    meta = {"title": title, "created_at": datetime.now().isoformat(timespec="seconds"),
+            "duration_min": task.get("audio_duration_min"),
+            "asr": "", "regenerated_with": alias}
+    transcript_text = transcript.to_timestamped_text(with_speaker=True)
+    summary_md = render_minutes(structured, template, meta, transcript_text)
+    (out_dir / "minutes.md").write_text(summary_md, encoding="utf-8")
+
+    db.save_minute(task_id, title=title, template=template,
+                   summary_md=summary_md,
+                   structured_json=json.dumps(structured.to_dict(), ensure_ascii=False),
+                   user_id=user_id)
+    try:
+        embedding.index_minute(task_id, user_id, summary_md)
+    except Exception:  # noqa: BLE001 — 重新向量化失败不阻断
+        logger.exception("task=%s regen 向量化失败（不阻断）", task_id)
+
+    logger.info("task=%s regen alias=%s template=%s", task_id, alias, template)
+    return db.get_minute(task_id, user_id=user_id) or {"task_id": task_id, "template": template}

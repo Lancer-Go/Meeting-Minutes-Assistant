@@ -196,6 +196,8 @@ timeline
 ### 🎯 目标
 实现多模型切换、历史检索问答、生态打通与实时转写（FR-12~14，G5~G7）。
 
+> 📌 范围收窄（用户 2026-08-27 确认）：M4 聚焦「多模型切换 + 检索问答 RAG」两项；G6（生态打通/IM 同步）与 G7（实时转写）按 mission §8-6/§3 留后期。
+
 ### 🔧 详细实现
 - **多模型切换**：ASR / LLM Provider 可插拔，配置化切换。
 - **检索问答 (RAG)**：会议历史向量化，支持"上次会议谁负责 X"式提问。
@@ -228,10 +230,12 @@ timeline
 
 ---
 
-> 📌 **当前进度**：M0（选型锁定）、M1（MVP 闭环）、M2（结构增强）已完成；**M3 · 生产化** 代码与交付物已落地（D1~D8：多服务 Compose / Celery+Redis / PostgreSQL+MinIO / CI/CD / 可观测 / 安全加固 / Locust / 成本监控），**TG-7 灰度上线** 待云服务器就绪（按 validation §5 降级为本地模拟生产演练，服务器就绪后回填在线率/吞吐云端实测）。下一步：云服务器就绪后完成 M3 上线收口，随后推进 **M4 · 智能化**。
+> 📌 **当前进度**：M0/M1/M2 已完成；M3 生产化代码与交付物已落地，TG-7 灰度上线待云服务器就绪；**M4 · 智能化** 已落地「多模型切换 + 检索问答 RAG」两项（模型注册表热切换 v4-pro/v4-flash/qwen-plus、pgvector + 云 embedding 纪要自动向量化、`POST /api/qa` 带来源引用 + 越权隔离 + 降级、`POST /api/tasks/{id}/regen` 换模型重生成、RAG Eval 集 + `compare_models.py` 灰度对比）。G6（IM/待办同步）/ G7（实时转写）留后期。下一步：云服务器就绪后完成 M3 上线收口与 M4 云端实测（bge-m3 向量命中率 / 三模型对比云端跑批）。
 >
 > 🔄 变更（2026-08-25）：LLM 主方案由 DeepSeek-V3 升级为 DeepSeek-V4 Pro（deepseek-v4-pro）；转写阶段新增按切片推进的进度展示（「第 x/N 段已完成」）；M2 落地结构化抽取（Function-Calling + 规则兜底）、说话人分离（腾讯云 SpeakerDiarization + pyannote/占位兜底）、角色识别（规则 + LLM 辅助）、Jinja2 三模板、编辑批注与历史检索、Eval 评测集与脚本。
 >
 > 🔄 变更（2026-08-26）：M3 生产化落地——服务拆分（api/worker 独立容器 + Celery+Redis 队列）、生产存储（SQLAlchemy 双模式 + MinIO 对象存储 + 迁移脚本）、自建账号体系（注册/登录 + JWT + user_id 越权隔离）、上传魔数校验与提示词注入缓解、AES-256 加密、审计日志、Prometheus+Grafana 可观测与告警、成本监控与限额告警（cost_stats）、GitHub Actions CI/CD、Locust 压测脚本、Caddy TLS 与回滚/观察方案。
 >
 > 🔄 变更（2026-08-27）：M2 角色识别/话者分离修复 + 腾讯云 COS 接入——修复腾讯 SpeakerDiarization 的 `SpeakerId=0` 被 `or ""` 误丢（话者分离覆盖率 5%→100%）、空 speaker 归假「S1」抢主持人、标准/精简模板缺「说话人/角色」节；新增 ASR URL 识别（SourceType=0，音频上传 COS 整段提交→全局话者分离，实测话者人数 4→2 且转写快 17 倍），对象存储接入腾讯云 COS（S3 兼容 + virtual 寻址 + put_object）；角色识别不再强推「汇报人」（仅命中汇报句式才判，否则参会者）。
+>
+> 🔄 变更（2026-08-27，M4）：智能化落地——`llm_registry` 模型注册表（`MMA_LLM_ALIAS` 配置化热切换，去 summary/extractor 类内硬编码）、接入 deepseek-v4-flash 降本通道与 Qwen Function-Calling 抽取、`POST /api/tasks/{id}/regen` 换模型/模板重生成、pgvector（compose 换 `pgvector/pgvector:pg16`）+ `minute_embeddings` 表 + `EmbeddingProvider`（OpenAI 兼容云 embedding）+ 纪要自动向量化（失败不阻断）、`POST /api/qa` 检索问答（余弦 top-k + 来源引用 + user_id 越权隔离 + 关键词降级兜底）+ 前端问答入口、`compare_models.py` 多模型对比与 `eval_rag.py` / `eval/rag_eval.json` RAG Eval 集。范围聚焦「多模型切换 + RAG」两项，G6/G7 留后期。
