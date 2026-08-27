@@ -233,3 +233,5 @@ timeline
 > 🔄 变更（2026-08-25）：LLM 主方案由 DeepSeek-V3 升级为 DeepSeek-V4 Pro（deepseek-v4-pro）；转写阶段新增按切片推进的进度展示（「第 x/N 段已完成」）；M2 落地结构化抽取（Function-Calling + 规则兜底）、说话人分离（腾讯云 SpeakerDiarization + pyannote/占位兜底）、角色识别（规则 + LLM 辅助）、Jinja2 三模板、编辑批注与历史检索、Eval 评测集与脚本。
 >
 > 🔄 变更（2026-08-26）：M3 生产化落地——服务拆分（api/worker 独立容器 + Celery+Redis 队列）、生产存储（SQLAlchemy 双模式 + MinIO 对象存储 + 迁移脚本）、自建账号体系（注册/登录 + JWT + user_id 越权隔离）、上传魔数校验与提示词注入缓解、AES-256 加密、审计日志、Prometheus+Grafana 可观测与告警、成本监控与限额告警（cost_stats）、GitHub Actions CI/CD、Locust 压测脚本、Caddy TLS 与回滚/观察方案。
+>
+> 🔄 变更（2026-08-27）：M2 角色识别/话者分离修复 + 腾讯云 COS 接入——修复腾讯 SpeakerDiarization 的 `SpeakerId=0` 被 `or ""` 误丢（话者分离覆盖率 5%→100%）、空 speaker 归假「S1」抢主持人、标准/精简模板缺「说话人/角色」节；新增 ASR URL 识别（SourceType=0，音频上传 COS 整段提交→全局话者分离，实测话者人数 4→2 且转写快 17 倍），对象存储接入腾讯云 COS（S3 兼容 + virtual 寻址 + put_object）；角色识别不再强推「汇报人」（仅命中汇报句式才判，否则参会者）。

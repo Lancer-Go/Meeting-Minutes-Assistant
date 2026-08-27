@@ -2,7 +2,7 @@
 
 | 文档类型 | 技术栈与技术设计 |
 | --- | --- |
-| 版本 / 状态 | v0.8（M3 生产化已落地：Celery+Redis 队列 / PostgreSQL+MinIO 存储 / 自建账号+JWT / Prometheus+Grafana 可观测 / CI/CD / 成本监控 / 灰度上线准备）✅ |
+| 版本 / 状态 | v0.9（M3 生产化已落地 + M2 角色识别/话者分离修复 + 腾讯云 COS 接入 ASR URL 识别）✅ |
 | 关联文档 | [mission](mission.md) · [roadmap](roadmap.md) · [选型决策记录](decisions/选型决策记录.md) |
 
 > 说明：本文汇总技术选型（Part A）与技术设计（Part B：需求、架构、方案、数据、测试、部署）。标记 🔶【建议】为倾向方案，✅【已定】为已决项。关键决策（云端 SaaS 优先 / 走云 API / 中文为主 / ≤ 2 小时 / 利润 0 性价比优先）见 [mission.md §8](mission.md)，具体厂商已由 M0 实测锁定，见 [decisions/选型决策记录.md](decisions/选型决策记录.md)。
@@ -42,10 +42,12 @@
 
 | 方案 | 说明 | 建议 |
 | --- | --- | --- |
-| 云 ASR 内置说话人分离 | 腾讯云录音文件识别 `SpeakerDiarization`（结果含 `SpeakerId`） | ✅ **已落地（M2）** |
+| 云 ASR 内置说话人分离 | 腾讯云录音文件识别 `SpeakerDiarization`（结果含 `SpeakerId`，⚠️ `0` 是合法说话人，不可当空值丢弃） | ✅ **已落地（M2）** |
 | **pyannote-audio** | 业界主流开源说话人分离 | 🔶 兜底（M2 已抽象 `DiarizationProvider`，可选接入，需 HF token） |
 | **whisperX（di-art）** | 对齐 whisper 时间戳 + 说话人 | 🔶 备选 |
 | **占位话者（S1/S2…）** | speaker 缺失时按轮次标记占位 | ✅ 已落地（M2 兜底，保证链路可跑通） |
+
+> 📌 **长音频话者分离走 URL 识别（`SourceType=0`）**：音频上传腾讯云 COS 后整段一次提交（无 base64 5MB 限制、无需切片），话者分离在全局音频上完成，避免 base64 切片导致的说话人过度切分（实测同一学员被拆成 1/2/3 三个标签，URL 模式回到 2 人）。无公网对象存储时回退 base64 切片（`MMA_ASR_URL_ENABLED=false`）。
 
 #### 文本预处理与角色标注
 
@@ -85,7 +87,7 @@
 | --- | --- | --- |
 | Web 框架 | **FastAPI** ✅ | M1 已落地（异步、类型友好） |
 | 任务队列 | FastAPI BackgroundTasks（M1）→ **Celery + Redis** ✅ | M3 已落地（API 入队 / worker 消费 / 状态回写；本地开发回退 BackgroundTasks） |
-| 存储 | 本地文件系统 + SQLite（M1/M2）→ **PostgreSQL + MinIO** ✅ | M3 已落地（SQLAlchemy 双模式 sqlite:///postgresql://，boto3 S3 兼容对象存储 + 本地 FS 兜底；预留平滑迁移腾讯云 COS） |
+| 存储 | 本地文件系统 + SQLite（M1/M2）→ **PostgreSQL + MinIO / 腾讯云 COS** ✅ | M3 已落地（SQLAlchemy 双模式 sqlite:///postgresql://，boto3 S3 兼容对象存储 + 本地 FS 兜底）；已接入腾讯云 COS（`S3_ADDRESSING_STYLE=virtual`，供 ASR URL 识别承载音频） |
 | 容器化 | **Docker / Docker Compose** ✅ | M3 已落地多服务编排（api / worker / redis / postgres / minio / prometheus / grafana） |
 | 编排（云端） | Kubernetes | Worker 可扩缩已通过 `--scale worker=N` 预留（M3 架构预留，K8s 留真实多机需要） |
 | 可观测 | 结构化日志（✅ M1）+ **Prometheus + Grafana** ✅ | M3 已落地 `/metrics` + 采集 + 面板 + 告警规则（webhook/邮件） |
@@ -226,7 +228,7 @@ flowchart TB
 | **extractor** | 决议/行动项/负责人/截止时间抽取 | LLM Function-Call / JSON Schema |
 | **render** | 纪要渲染为 Markdown | Markdown / Jinja2（Pandoc 后期） |
 | **orchestrator** | 任务状态机、队列调度、重试 | FastAPI BackgroundTasks（M1）/ **Celery + Redis**（M3 已落地） |
-| **storage** | 原始文件、中间产物、纪要持久化 | 本地 FS + SQLite（M1）/ **PostgreSQL + MinIO**（M3 已落地，boto3 封装，本地 FS 兜底） |
+| **storage** | 原始文件、中间产物、纪要持久化 | 本地 FS + SQLite（M1）/ **PostgreSQL + MinIO / 腾讯云 COS**（M3 已落地，boto3 S3 兼容封装 + virtual 寻址 + `presigned_url`，本地 FS 兜底） |
 | **auth / security** | 注册/登录、JWT 鉴权、越权防护、上传校验、加密、审计 | bcrypt + PyJWT HS256 + AES-256-GCM + 审计日志（M3 已落地） |
 | **metrics / cost** | 指标、成本统计、限额告警 | prometheus-client + cost_stats 表（M3 已落地） |
 
@@ -247,7 +249,7 @@ ffmpeg -i input.mp4 -vn -ac 1 -ar 16000 -f wav output.wav
 
 统一 16kHz 单声道；可选静音检测、降噪、AGC。
 
-**③ 语音转文字（ASR）**：抽象 `ASRProvider` 接口，首期接 **腾讯云 16k_zh**（备选阿里云 NLS，本地兜底 faster-whisper）；说话人分离优先用云 ASR 内置能力，pyannote / whisperx 作兜底。长音频按切片逐段识别，`transcribe` 支持 `progress_callback(done, total)` 回调，向任务状态推送「第 x/N 段已完成」切片级进度（本地 whisper 按已处理时长回调）。
+**③ 语音转文字（ASR）**：抽象 `ASRProvider` 接口，首期接 **腾讯云 16k_zh**（备选阿里云 NLS，本地兜底 faster-whisper）；说话人分离优先用云 ASR 内置能力，pyannote / whisperx 作兜底。长音频两种提交方式：① **URL 识别（`SourceType=0`，生产默认）**——音频上传腾讯云 COS 取预签名 URL 后整段一次提交，免切片、全局话者分离（实测快 17 倍、人数更准）；② **base64 切片**——无公网存储时回退，按 100s 切片逐段识别。`transcribe` 支持 `progress_callback(done, total)` 回调，向任务状态推送「第 x/N 段已完成」切片级进度（本地 whisper 按已处理时长回调）。
 
 **④ 文本预处理与角色标注**：分句、去重、合并碎句；标记说话人；猜测角色。
 
