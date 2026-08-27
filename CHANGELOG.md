@@ -51,7 +51,8 @@
 - 接入云 ASR 实测：阿里云 NLS 实时语音转写 + 腾讯云录音文件识别（b3499f0）
 
 ### 变更
-- `summary`/`extractor` Provider 由类内硬编码 base_url/model 改为注册表驱动：`DeepSeekExtractor` 去硬编码 `base_url` 并抽 `OpenAILikeExtractor` 基类、新增 `QwenExtractor`（Function-Calling）；`DeepSeekLLM`/`QwenLLM` 改从注册表取配置；`LLM_PROVIDERS`/`EXTRACTORS` 增 v4-pro/v4-flash/qwen-plus 别名工厂；`pipeline` 经 `active_summary_alias`/`active_extractor_alias` 热切换并在 metrics 记 alias（1e4bbe4）
+- 模型注册表可扩展化：`app/llm_registry.py` 内置供应商目录（DeepSeek / OpenAI(GPT) / 通义(Qwen) / 智谱(GLM) / 月之暗面(Kimi)）+ 内置别名（v4-pro / v4-flash / qwen-plus / gpt-4o / glm-4-plus / moonshot-v1-8k）；新增 `MMA_LLM_ALIASES`（JSON 环境变量）零改码扩展任意 OpenAI 兼容模型；`get_llm_provider` / `get_extractor_provider` 对未登记别名回退到注册表（不再写死 qwen）；`config` 增 `ZHIPU_API_KEY` / `MOONSHOT_API_KEY`（e0709b6）
+- `summary`/`extractor` Provider 由类内硬编码 base_url/model 改为注册表驱动：`DeepSeekExtractor` 去硬编码 `base_url` 并抽 `OpenAILikeExtractor` 基类、新增 `QwenExtractor`（Function-Calling）；`DeepSeekLLM`/`QwenLLM` 改从注册表取配置；`pipeline` 经 `active_summary_alias`/`active_extractor_alias` 热切换并在 metrics 记 alias（1e4bbe4）
 - `asr.Transcript` 新增 `from_dict`（regen 重建转写）；`config` 新增 `MMA_LLM_ALIAS`/`MMA_LLM_MODEL`/`MMA_QWEN_MODEL`/`MMA_EMBEDDING_*`/`MMA_RAG_*`；`db` 新增 `MinuteEmbedding` 模型与 `replace/list/count/delete_embeddings`（1e4bbe4）
 - 接入腾讯云 COS 作为 ASR URL 识别的对象存储：`config` 增 `S3_ADDRESSING_STYLE`（COS 强制 virtual 寻址，path 报 PathStyleDomainForbidden）且 `S3_ACCESS_KEY/S3_SECRET_KEY` 未配置时回退到 `TENCENT_SECRET_ID/KEY`（COS 与云 ASR 同账号通用）；`storage.put_file` 由 `upload_file`（multipart）改为单次 `put_object`（COS S3 兼容接口对 multipart 报 MissingContentLength）；新增验证脚本 `scripts/verify_speaker_coverage.py`（URL 模式优先、回退 base64 切片，输出覆盖率/人数/各说话人段数）（3b98510）
 - `role` 角色识别不再对非主持人「字符数最多者」强行判为汇报人：仅在命中「汇报/介绍/说明/讲解」句式时才判汇报人，否则默认参会者（避免两人会议把唯一非主持人误标成汇报人）（3b98510）
