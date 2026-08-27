@@ -23,6 +23,11 @@
 -->
 
 ### 新增
+- 实现 M4 多模型注册表 `app/llm_registry.py`（别名 → provider/base_url/model/api_key，`MMA_LLM_ALIAS` 配置化热切换，无需改代码）：接入 deepseek-v4-flash 降本通道与 Qwen Function-Calling 抽取；summary/extractor 走注册表、去掉类内硬编码（1e4bbe4）
+- 实现 M4 纪要向量化（pgvector + 云 embedding）：compose 的 postgres 换 `pgvector/pgvector:pg16`（+`deploy/init-pgvector.sql` 启用扩展）；`db` 新增 `minute_embeddings` 表（JSON 文本列，跨 SQLite/PG）；新增 `app/embedding.py`（`EmbeddingProvider` 抽象 + OpenAI 兼容实现 + 切块）；`worker` 在纪要持久化后自动向量化（失败不阻断主链路）（1e4bbe4）
+- 实现 M4 检索问答 RAG：新增 `app/rag.py`（余弦 top-k 检索 + 来源引用 + user_id 越权隔离 + 关键词降级兜底）与 `POST /api/qa`；`static/index.html` 新增「智能问答」入口（展示答案 + 来源链接）（1e4bbe4）
+- 实现 M4 重生成接口 `POST /api/tasks/{id}/regen`：换模型/模板重生成纪要（summary+extractor+render），越权校验，重生成后重新向量化（1e4bbe4）
+- 新增 M4 评测与脚本：`scripts/compare_models.py`（三模型质量/成本/耗时对比）+ `scripts/eval_rag.py` / `eval/rag_eval.json`（RAG 检索命中率 Eval 集，24 条中文问题 + 黄金来源，确定性哈希向量离线复现）（1e4bbe4）
 - 新增 M4 智能化任务准备（plan / requirements / validation 三文档）：多模型切换（LLM 侧 V4 Pro 主 / V4 Flash 降本 / Qwen 备选，模型注册表配置化热切换，summary/extractor 走注册表）+ 检索问答 RAG（pgvector 向量化 + 云 embedding + `POST /api/qa` 带来源引用 + 越权隔离 + 降级兜底）；G6/G7 留后期（80c066f）
 - 实现 M3 服务拆分与容器化：Celery + Redis 生产队列（`app/celery_app.py`，替换 BackgroundTasks 直调，本地开发回退 BackgroundTasks）+ 多服务 Docker Compose（api/worker/redis/postgres/minio/prometheus/grafana，卷外置 + 健康检查 + worker 可 `--scale` 扩缩）+ config 环境变量化（DATABASE_URL/REDIS_URL/S3_*/JWT_SECRET/COST_LIMIT_*）（369c8a6）
 - 实现 M3 生产存储迁移：`app/db.py` 标准库 sqlite3 → SQLAlchemy 双模式（sqlite:// 本地 / postgresql:// 生产，函数签名与 dict 返回保持 M1/M2 兼容），新增 users/audit_logs/cost_stats 表 + tasks.user_id；`app/storage.py`（boto3 S3 兼容 + 本地 FS 兜底，SSE-AES256）+ `scripts/migrate_sqlite_to_pg.py` 迁移脚本（369c8a6）
@@ -46,6 +51,8 @@
 - 接入云 ASR 实测：阿里云 NLS 实时语音转写 + 腾讯云录音文件识别（b3499f0）
 
 ### 变更
+- `summary`/`extractor` Provider 由类内硬编码 base_url/model 改为注册表驱动：`DeepSeekExtractor` 去硬编码 `base_url` 并抽 `OpenAILikeExtractor` 基类、新增 `QwenExtractor`（Function-Calling）；`DeepSeekLLM`/`QwenLLM` 改从注册表取配置；`LLM_PROVIDERS`/`EXTRACTORS` 增 v4-pro/v4-flash/qwen-plus 别名工厂；`pipeline` 经 `active_summary_alias`/`active_extractor_alias` 热切换并在 metrics 记 alias（1e4bbe4）
+- `asr.Transcript` 新增 `from_dict`（regen 重建转写）；`config` 新增 `MMA_LLM_ALIAS`/`MMA_LLM_MODEL`/`MMA_QWEN_MODEL`/`MMA_EMBEDDING_*`/`MMA_RAG_*`；`db` 新增 `MinuteEmbedding` 模型与 `replace/list/count/delete_embeddings`（1e4bbe4）
 - 接入腾讯云 COS 作为 ASR URL 识别的对象存储：`config` 增 `S3_ADDRESSING_STYLE`（COS 强制 virtual 寻址，path 报 PathStyleDomainForbidden）且 `S3_ACCESS_KEY/S3_SECRET_KEY` 未配置时回退到 `TENCENT_SECRET_ID/KEY`（COS 与云 ASR 同账号通用）；`storage.put_file` 由 `upload_file`（multipart）改为单次 `put_object`（COS S3 兼容接口对 multipart 报 MissingContentLength）；新增验证脚本 `scripts/verify_speaker_coverage.py`（URL 模式优先、回退 base64 切片，输出覆盖率/人数/各说话人段数）（3b98510）
 - `role` 角色识别不再对非主持人「字符数最多者」强行判为汇报人：仅在命中「汇报/介绍/说明/讲解」句式时才判汇报人，否则默认参会者（避免两人会议把唯一非主持人误标成汇报人）（3b98510）
 - 腾讯云 ASR 新增 URL 识别（`SourceType=0`）：音频上传公网对象存储后整段一次提交（无 base64 5MB 限制、无需切片），话者分离在全局音频上完成，修复切片导致的说话人过度切分（1 名学员被拆成 1/2/3 三个标签）。`TencentASR` 重构出 `_client/_build_request/_poll_result/_segments_from_response` 并新增 `_recognize_url`，`transcribe` 增 `url` 参数；`storage` 增 `presigned_url`；`config` 增 `MMA_ASR_URL_ENABLED`（默认关，需公网可达对象存储）；`pipeline` 按配置上传取 URL、失败回退 base64 切片并记 `asr_url_mode`（d8ec398）
@@ -67,6 +74,7 @@
 - `storage` 的 S3 上传由强制 SSE-AES256 改为 `S3_SSE_ENABLED` 可配置（代码默认开，本地 MinIO 无 KES 时 compose 默认关），修复上传报 "KMS is not configured" 导致任务 500 的问题（0d655f8）
 
 ### 文档
+- tech-stack 更新至 v0.10：回填 M4 选型（模型注册表热切换 / deepseek-v4-flash 降本通道 / Qwen 抽取 / pgvector / 云 embedding / RAG 降级），A2 新增「文本向量化与检索问答」、A5 补 M4 选型确认、B2 模块职责补 llm_registry/embedding/rag、B4 数据模型补 MinuteEmbedding 与 `POST /api/qa`、`regen`、B5 覆盖率 82%；roadmap 补 M4 范围收窄（聚焦两项，G6/G7 留后期）与「当前进度」/变更记录（1e4bbe4）
 - tech-stack 更新至 v0.9：说话人分离/ASR 两处回填 URL 识别（SourceType=0，音频上传 COS 整段提交→全局话者分离）、`SpeakerId=0` 合法性告警、存储/模块职责表补腾讯云 COS（virtual 寻址）；roadmap 与选型决策记录补 2026-08-27 变更（话者分离修复 + COS 接入）（33eea7e）
 - tech-stack 更新至 v0.8，回填 M3 实际选型（Celery+Redis / PostgreSQL+MinIO / 自建账号+JWT / Prometheus+Grafana / GitHub Actions / Locust / 成本监控），B4 数据模型与 API、B5 测试、B6 部署对齐 M3 实现；roadmap「当前进度」更新为 M3 已落地、TG-7 灰度上线待云服务器就绪（369c8a6）
 - tech-stack 更新至 v0.7，新增 A6「成本模型与计费参考」：DeepSeek 2026-08 官方价格表（V4 Pro / Flash / Vision-Exp，含高峰/空闲与缓存命中价）、扣费规则、V4 Pro 单场成本估算（推算 ≈ ¥0.2~0.8/场·空闲，标注假设待 M3 重测）、flash 降本备选；选型决策记录补 V4 Pro 价格备注（5e774e8）
