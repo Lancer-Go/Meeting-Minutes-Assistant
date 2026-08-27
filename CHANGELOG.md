@@ -52,6 +52,7 @@
 - 接入云 ASR 实测：阿里云 NLS 实时语音转写 + 腾讯云录音文件识别（b3499f0）
 
 ### 变更
+- 账号注册管控落地（禁自助注册 + 管理员/数据库加用户）：删除 `POST /api/auth/register` 与 `register.html`（登录页去注册入口）；新增受 `require_admin` 鉴权的 `POST /api/admin/users`（管理员创建用户 + `admin_create_user` 审计留痕）；`users` 表加 `is_admin`（默认 False）+ `_MISSING_COLUMNS` 迁移 + `create_user` 扩展 + `set_user_admin`/`list_audit_logs`；首位管理员由 `MMA_ADMIN_USERNAME/PASSWORD` 启动时幂等创建（`ensure_admin_exists`）；`require_admin` 依赖（未登录 401 / 非管理员 403 / 鉴权关闭放行）；CLI `python -m app.cli create-user`（`app/cli.py`）；`register()` 收紧为 `admin_create_user()`（3461840）
 - 模型注册表可扩展化：`app/llm_registry.py` 内置供应商目录（DeepSeek / OpenAI(GPT) / 通义(Qwen) / 智谱(GLM) / 月之暗面(Kimi)）+ 内置别名（v4-pro / v4-flash / qwen-plus / gpt-4o / glm-4-plus / moonshot-v1-8k）；新增 `MMA_LLM_ALIASES`（JSON 环境变量）零改码扩展任意 OpenAI 兼容模型；`get_llm_provider` / `get_extractor_provider` 对未登记别名回退到注册表（不再写死 qwen）；`config` 增 `ZHIPU_API_KEY` / `MOONSHOT_API_KEY`（e0709b6）
 - `summary`/`extractor` Provider 由类内硬编码 base_url/model 改为注册表驱动：`DeepSeekExtractor` 去硬编码 `base_url` 并抽 `OpenAILikeExtractor` 基类、新增 `QwenExtractor`（Function-Calling）；`DeepSeekLLM`/`QwenLLM` 改从注册表取配置；`pipeline` 经 `active_summary_alias`/`active_extractor_alias` 热切换并在 metrics 记 alias（1e4bbe4）
 - `asr.Transcript` 新增 `from_dict`（regen 重建转写）；`config` 新增 `MMA_LLM_ALIAS`/`MMA_LLM_MODEL`/`MMA_QWEN_MODEL`/`MMA_EMBEDDING_*`/`MMA_RAG_*`；`db` 新增 `MinuteEmbedding` 模型与 `replace/list/count/delete_embeddings`（1e4bbe4）
