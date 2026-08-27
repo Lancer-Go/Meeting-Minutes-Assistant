@@ -71,10 +71,12 @@
 - 用真实会议（80min）完成三家 ASR 对比与 DeepSeek 端到端纪要，锁定选型（ASR 腾讯云 16k_zh / LLM DeepSeek-chat），回填《选型决策记录》（b3499f0）
 
 ### 修复
+- docker-compose.yml 的 `S3_ENDPOINT` 由硬编码 `http://minio:9000` 改为 `${S3_ENDPOINT:-http://minio:9000}`，修复 `.env` 里配置的 COS endpoint 被 compose `environment` 块（优先级高于 `env_file`）覆盖、导致生产 ASR URL 识别模式无法启用的问题（9e1d997）
 - 修复 M2 角色识别/话者分离三处缺陷：①腾讯云 `SpeakerDiarization` 返回的 `SpeakerId` 为 int，`0` 是合法说话人（主讲/主持人），原 `str(getattr(r,"SpeakerId","") or "")` 用 `or ""` 兜底把 0 误判为空丢弃，导致话者分离覆盖率仅 ~5%（1668/1756 段空 speaker）；新增 `_speaker_to_str` 保留 0。②`app/role.py` 把空 speaker 段归为假「S1」并因段数最多被判成主持人，改为未标注段不参与统计（全部无标注才回退单说话人占位）。③`standard`/`brief` 模板不渲染「说话人/角色」节，角色识别结果在默认纪要中不可见，两模板补齐该节；`pipeline` 话者分离判定改用 `speaker_coverage`（==0 才走 diarization 兜底）并在 metrics 记录覆盖率（0c34044）
 - `storage` 的 S3 上传由强制 SSE-AES256 改为 `S3_SSE_ENABLED` 可配置（代码默认开，本地 MinIO 无 KES 时 compose 默认关），修复上传报 "KMS is not configured" 导致任务 500 的问题（0d655f8）
 
 ### 文档
+- deploy/README.md 回填真实云服务器上线记录（2026-08-27 腾讯云 2C2G 广州裁剪版：api/worker/redis/postgres + 腾讯云 COS，4G swap + worker 并发=1，升级 4C8G 恢复全套），并补 COS 对象存储 `.env` 配置说明（9e1d997）
 - tech-stack 更新至 v0.10：回填 M4 选型（模型注册表热切换 / deepseek-v4-flash 降本通道 / Qwen 抽取 / pgvector / 云 embedding / RAG 降级），A2 新增「文本向量化与检索问答」、A5 补 M4 选型确认、B2 模块职责补 llm_registry/embedding/rag、B4 数据模型补 MinuteEmbedding 与 `POST /api/qa`、`regen`、B5 覆盖率 82%；roadmap 补 M4 范围收窄（聚焦两项，G6/G7 留后期）与「当前进度」/变更记录（1e4bbe4）
 - tech-stack 更新至 v0.9：说话人分离/ASR 两处回填 URL 识别（SourceType=0，音频上传 COS 整段提交→全局话者分离）、`SpeakerId=0` 合法性告警、存储/模块职责表补腾讯云 COS（virtual 寻址）；roadmap 与选型决策记录补 2026-08-27 变更（话者分离修复 + COS 接入）（33eea7e）
 - tech-stack 更新至 v0.8，回填 M3 实际选型（Celery+Redis / PostgreSQL+MinIO / 自建账号+JWT / Prometheus+Grafana / GitHub Actions / Locust / 成本监控），B4 数据模型与 API、B5 测试、B6 部署对齐 M3 实现；roadmap「当前进度」更新为 M3 已落地、TG-7 灰度上线待云服务器就绪（369c8a6）
