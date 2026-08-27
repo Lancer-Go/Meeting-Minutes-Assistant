@@ -23,6 +23,7 @@
 -->
 
 ### 新增
+- 新增 M4 智能化任务准备（plan / requirements / validation 三文档）：多模型切换（LLM 侧 V4 Pro 主 / V4 Flash 降本 / Qwen 备选，模型注册表配置化热切换，summary/extractor 走注册表）+ 检索问答 RAG（pgvector 向量化 + 云 embedding + `POST /api/qa` 带来源引用 + 越权隔离 + 降级兜底）；G6/G7 留后期（80c066f）
 - 实现 M3 服务拆分与容器化：Celery + Redis 生产队列（`app/celery_app.py`，替换 BackgroundTasks 直调，本地开发回退 BackgroundTasks）+ 多服务 Docker Compose（api/worker/redis/postgres/minio/prometheus/grafana，卷外置 + 健康检查 + worker 可 `--scale` 扩缩）+ config 环境变量化（DATABASE_URL/REDIS_URL/S3_*/JWT_SECRET/COST_LIMIT_*）（369c8a6）
 - 实现 M3 生产存储迁移：`app/db.py` 标准库 sqlite3 → SQLAlchemy 双模式（sqlite:// 本地 / postgresql:// 生产，函数签名与 dict 返回保持 M1/M2 兼容），新增 users/audit_logs/cost_stats 表 + tasks.user_id；`app/storage.py`（boto3 S3 兼容 + 本地 FS 兜底，SSE-AES256）+ `scripts/migrate_sqlite_to_pg.py` 迁移脚本（369c8a6）
 - 实现 M3 安全加固：`app/auth.py`（注册/登录 + JWT PyJWT HS256 + bcrypt）+ 全业务路由鉴权与 user_id 越权隔离 + 上传魔数校验/文件名消毒 + 提示词注入缓解（`app/security.py` guard_prompt）+ AES-256-GCM 加密（`app/crypto.py`）+ 审计日志（`app/audit.py`）+ 前端登录/注册页与 Bearer token（`static/auth.js`）（369c8a6）
