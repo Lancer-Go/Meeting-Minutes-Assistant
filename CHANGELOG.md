@@ -45,6 +45,8 @@
 - 接入云 ASR 实测：阿里云 NLS 实时语音转写 + 腾讯云录音文件识别（b3499f0）
 
 ### 变更
+- 接入腾讯云 COS 作为 ASR URL 识别的对象存储：`config` 增 `S3_ADDRESSING_STYLE`（COS 强制 virtual 寻址，path 报 PathStyleDomainForbidden）且 `S3_ACCESS_KEY/S3_SECRET_KEY` 未配置时回退到 `TENCENT_SECRET_ID/KEY`（COS 与云 ASR 同账号通用）；`storage.put_file` 由 `upload_file`（multipart）改为单次 `put_object`（COS S3 兼容接口对 multipart 报 MissingContentLength）；新增验证脚本 `scripts/verify_speaker_coverage.py`（URL 模式优先、回退 base64 切片，输出覆盖率/人数/各说话人段数）（3b98510）
+- `role` 角色识别不再对非主持人「字符数最多者」强行判为汇报人：仅在命中「汇报/介绍/说明/讲解」句式时才判汇报人，否则默认参会者（避免两人会议把唯一非主持人误标成汇报人）（3b98510）
 - 腾讯云 ASR 新增 URL 识别（`SourceType=0`）：音频上传公网对象存储后整段一次提交（无 base64 5MB 限制、无需切片），话者分离在全局音频上完成，修复切片导致的说话人过度切分（1 名学员被拆成 1/2/3 三个标签）。`TencentASR` 重构出 `_client/_build_request/_poll_result/_segments_from_response` 并新增 `_recognize_url`，`transcribe` 增 `url` 参数；`storage` 增 `presigned_url`；`config` 增 `MMA_ASR_URL_ENABLED`（默认关，需公网可达对象存储）；`pipeline` 按配置上传取 URL、失败回退 base64 切片并记 `asr_url_mode`（d8ec398）
 - `Dockerfile` 的 apt/pip 源切换为阿里云国内镜像（`mirrors.aliyun.com`），修复 Docker 构建流量走 Clash 代理（fake-ip）拉取 deb.debian.org 被 502 导致 `apt-get install` 失败的问题（e0faa88）
 - `db` 由标准库 sqlite3 迁移为 SQLAlchemy 双模式（sqlite/postgresql），新增 users/audit_logs/cost_stats 表与 tasks.user_id 越权隔离（369c8a6）
