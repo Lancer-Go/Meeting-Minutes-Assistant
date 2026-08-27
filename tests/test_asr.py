@@ -26,6 +26,16 @@ def test_char_count():
     assert Transcript(text="你好世界").char_count == 4
 
 
+def test_speaker_to_str_keeps_zero():
+    from app.asr import _speaker_to_str
+    # SpeakerId 为 int，0 是合法说话人，不能被 `or ""` 丢弃
+    assert _speaker_to_str(0) == "0"
+    assert _speaker_to_str(1) == "1"
+    assert _speaker_to_str(None) == ""
+    assert _speaker_to_str("") == ""
+    assert _speaker_to_str("0") == "0"
+
+
 def test_get_provider_whisper():
     assert get_asr_provider("whisper").name == "whisper"
 

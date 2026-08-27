@@ -105,6 +105,16 @@ class WhisperLocalASR(ASRProvider):
                           cost_rmb=0.0)
 
 
+def _speaker_to_str(sid) -> str:
+    """把 SDK 返回的 SpeakerId 规范为字符串标签。
+
+    ⚠️ SpeakerId 为 int，`0` 是合法说话人（单声道话者分离的首个/主讲说话人，
+    双声道时 0=左声道）。不能用 `sid or ""` 兜底，否则会把 0 号说话人误判为空串丢弃
+    （M2 实测：话者分离覆盖率仅 5%，其余段被丢成空 speaker 的根因）。
+    """
+    return str(sid) if sid is not None and sid != "" else ""
+
+
 # --------------------------------------------------------------------------- 云 ASR
 class TencentASR(ASRProvider):
     """腾讯云录音文件识别（16k_zh，M0 锁定）。
@@ -180,7 +190,7 @@ class TencentASR(ASRProvider):
         for r in sresp.Data.ResultDetail or []:
             segs.append(Segment(float(r.StartMs) / 1000.0, float(r.EndMs) / 1000.0,
                                 r.FinalSentence or "",
-                                speaker=str(getattr(r, "SpeakerId", "") or "")))
+                                speaker=_speaker_to_str(getattr(r, "SpeakerId", None))))
         return segs
 
     def transcribe(self, wav: Path, progress_callback=None) -> Transcript:

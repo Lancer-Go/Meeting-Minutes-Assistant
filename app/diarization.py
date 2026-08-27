@@ -119,6 +119,14 @@ def has_speakers(segments: list[Segment]) -> bool:
     return any(bool(getattr(s, "speaker", "")) for s in segments)
 
 
+def speaker_coverage(segments: list[Segment]) -> float:
+    """已标注 speaker 的段占比（0.0~1.0），用于评估云 ASR 话者分离完整度。"""
+    if not segments:
+        return 0.0
+    labeled = sum(1 for s in segments if bool(getattr(s, "speaker", "")))
+    return labeled / len(segments)
+
+
 def distinct_speakers(segments: list[Segment]) -> list[str]:
     """按出现顺序返回去重后的 speaker 列表。"""
     seen: list[str] = []

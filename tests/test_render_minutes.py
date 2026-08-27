@@ -39,6 +39,12 @@ def test_three_templates_render():
     assert "讨论要点" not in out["brief"]
     assert "未决问题" not in out["brief"]
 
+    # 标准 / 精简模板：也含说话人 / 角色（M2 修复：默认纪要应可见角色识别）
+    assert "说话人" in out["standard"]
+    assert "汇报人" in out["standard"]
+    assert "说话人" in out["brief"]
+    assert "汇报人" in out["brief"]
+
     # 详细模板：含说话人 / 角色 + 全文转写附录
     assert "说话人" in out["detailed"]
     assert "汇报人" in out["detailed"]

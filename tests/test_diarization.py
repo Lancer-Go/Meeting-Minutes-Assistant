@@ -41,6 +41,16 @@ def test_has_speakers():
     assert has_speakers([Segment(0, 1, "a")]) is False
 
 
+def test_speaker_coverage():
+    from app.diarization import speaker_coverage
+    segs = [Segment(0, 1, "a", speaker="S1"),
+            Segment(1, 2, "b"),
+            Segment(2, 3, "c", speaker="S2")]
+    assert speaker_coverage(segs) == pytest.approx(2 / 3)
+    assert speaker_coverage([]) == 0.0
+    assert speaker_coverage([Segment(0, 1, "a")]) == 0.0
+
+
 def test_distinct_speakers():
     segs = [Segment(0, 1, "a", speaker="S1"), Segment(1, 2, "b", speaker="S2"),
             Segment(2, 3, "c", speaker="S1")]

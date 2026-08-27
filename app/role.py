@@ -22,10 +22,12 @@ _HOST_RE = re.compile(r"(开会|开始|结束|总结一下|大家|今天|本次|
 
 
 def _speaker_stats(segments: list[Segment]) -> dict[str, dict]:
-    """按 speaker 聚合：出现次数、字符数、首句起始时间、文本。"""
+    """按 speaker 聚合：出现次数、字符数、首句起始时间、文本。未标注段跳过。"""
     stats: dict[str, dict] = {}
     for s in segments:
-        sp = getattr(s, "speaker", "") or "S1"
+        sp = (getattr(s, "speaker", "") or "").strip()
+        if not sp:  # 未标注段不参与统计（不再把空 speaker 归为假 S1）
+            continue
         st = stats.setdefault(sp, {"count": 0, "chars": 0, "start": float("inf"), "text": ""})
         st["count"] += 1
         st["chars"] += len(s.text)
@@ -35,11 +37,17 @@ def _speaker_stats(segments: list[Segment]) -> dict[str, dict]:
 
 
 def identify_roles(segments: list[Segment]) -> list[Speaker]:
-    """规则式角色识别：返回按首现顺序排列的 speaker → role 列表。"""
+    """规则式角色识别：返回按首现顺序排列的 speaker → role 列表。
+
+    未标注（speaker 为空）的段不参与判定；若全部无标注则返回单说话人占位（主持人）。
+    """
     if not segments:
         return []
     stats = _speaker_stats(segments)
     names = [sp for sp in _ordered_names(segments) if sp in stats]
+
+    if not names:  # 全部未标注：占位单说话人
+        return [Speaker(name="S1", role=ROLE_HOST)]
 
     if len(names) == 1:
         return [Speaker(name=names[0], role=ROLE_HOST)]
@@ -67,8 +75,8 @@ def identify_roles(segments: list[Segment]) -> list[Speaker]:
 def _ordered_names(segments: list[Segment]) -> list[str]:
     seen: list[str] = []
     for s in segments:
-        sp = getattr(s, "speaker", "") or "S1"
-        if sp not in seen:
+        sp = (getattr(s, "speaker", "") or "").strip()
+        if sp and sp not in seen:
             seen.append(sp)
     return seen
 

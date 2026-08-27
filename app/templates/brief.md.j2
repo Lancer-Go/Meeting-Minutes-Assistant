@@ -1,5 +1,11 @@
 # {{ minute.title or meta.get('title') or '会议纪要' }}
 
+## 说话人 / 角色
+{% if minute.speakers %}| 说话人 | 角色 |
+| --- | --- |
+{% for s in minute.speakers %}| {{ s.name }} | {{ s.role }} |
+{% endfor %}{% else %}- （无）
+{% endif %}
 ## 核心决议
 {% if minute.decisions %}{% for d in minute.decisions %}- **{{ d.conclusion }}**{% if d.basis %}（依据：{{ d.basis }}）{% endif %}
 {% endfor %}{% else %}- （无）

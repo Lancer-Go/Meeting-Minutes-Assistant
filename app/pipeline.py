@@ -19,7 +19,7 @@ from app.diarization import (
     assign_speakers,
     distinct_speakers,
     get_diarization_provider,
-    has_speakers,
+    speaker_coverage,
 )
 from app.extractor import get_extractor_provider
 from app.extractor import has_cloud_credentials as extractor_has_creds
@@ -122,8 +122,8 @@ def run(input_path: Path, out_dir: Path, asr_name: str, llm_name: str,
     metrics_mod.observe_asr(metrics["asr_elapsed_s"])
     metrics_mod.add_asr_seconds(audio_minutes * 60)
 
-    # 3) 说话人分离（M2）：云 ASR 未返回 speaker 时，走 diarization provider 兜底
-    if not has_speakers(transcript.segments):
+    # 3) 说话人分离（M2）：云 ASR 未返回任何 speaker 时，走 diarization provider 兜底
+    if speaker_coverage(transcript.segments) == 0.0:
         try:
             diar = get_diarization_provider(diarization_name)
             assign_speakers(transcript.segments, diar.diarize(wav, transcript.segments))
@@ -135,6 +135,7 @@ def run(input_path: Path, out_dir: Path, asr_name: str, llm_name: str,
             metrics["diarization"] = f"{diarization_name}(降级 placeholder): {e}"
     else:
         metrics["diarization"] = "cloud-asr-builtin"
+    metrics["speaker_coverage"] = round(speaker_coverage(transcript.segments), 3)
     transcript.speakers = distinct_speakers(transcript.segments)
 
     (out_dir / "transcript.json").write_text(
