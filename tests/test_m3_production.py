@@ -137,33 +137,23 @@ def _enable_auth(monkeypatch):
     monkeypatch.setattr(config, "AUTH_ENABLED", True)
 
 
-def _register_login(client, username, password="secret123"):
-    r = client.post("/api/auth/register", json={"username": username, "password": password})
-    assert r.status_code == 201, r.text
-    r2 = client.post("/api/auth/login", json={"username": username, "password": password})
-    assert r2.status_code == 200, r2.text
-    return r2.json()["token"], r2.json()["user"]["id"]
+def _create_and_login(client, username, password="secret123", is_admin=False):
+    """禁自助注册后：测试直接落库建用户（等价于管理员/数据库加用户）再登录拿 token。"""
+    from app.auth import hash_password
+    db.create_user(username, hash_password(password), is_admin=is_admin)
+    r = client.post("/api/auth/login", json={"username": username, "password": password})
+    assert r.status_code == 200, r.text
+    return r.json()["token"], r.json()["user"]["id"]
 
 
-def test_auth_register_login_and_401(tmp_data_dir, monkeypatch):
+def test_auth_login_and_401(tmp_data_dir, monkeypatch):
     _enable_auth(monkeypatch)
     with TestClient(app) as client:
         assert client.get("/api/tasks").status_code == 401  # 未登录 401
-        token, _uid = _register_login(client, "alice")
+        token, _uid = _create_and_login(client, "alice")
         r = client.get("/api/tasks", headers={"Authorization": f"Bearer {token}"})
         assert r.status_code == 200
         assert r.json() == []
-
-
-def test_auth_register_duplicate_and_weak(tmp_data_dir, monkeypatch):
-    _enable_auth(monkeypatch)
-    with TestClient(app) as client:
-        assert client.post("/api/auth/register",
-                           json={"username": "bob", "password": "123"}).status_code == 400
-        assert client.post("/api/auth/register",
-                           json={"username": "bob", "password": "secret123"}).status_code == 201
-        assert client.post("/api/auth/register",
-                           json={"username": "bob", "password": "secret123"}).status_code == 400
 
 
 def test_user_isolation(tmp_data_dir, monkeypatch):
@@ -171,8 +161,8 @@ def test_user_isolation(tmp_data_dir, monkeypatch):
     _enable_auth(monkeypatch)
     db.init_db()
     with TestClient(app) as client:
-        tok_a, uid_a = _register_login(client, "alice")
-        tok_b, _ = _register_login(client, "bob")
+        tok_a, uid_a = _create_and_login(client, "alice")
+        tok_b, _ = _create_and_login(client, "bob")
 
         # A 直接落一条属于自己的任务
         db.create_task("t-iso", "meeting.mp4", "", user_id=uid_a)
@@ -198,7 +188,7 @@ def test_metrics_endpoint(tmp_data_dir):
 def test_costs_endpoint(tmp_data_dir, monkeypatch):
     _enable_auth(monkeypatch)
     with TestClient(app) as client:
-        token, uid = _register_login(client, "costuser")
+        token, uid = _create_and_login(client, "costuser")
         db.add_cost_stat("t1", user_id=uid, llm_cost_rmb=0.5, asr_cost_rmb=0.1)
         r = client.get("/api/costs", headers={"Authorization": f"Bearer {token}"})
         assert r.status_code == 200

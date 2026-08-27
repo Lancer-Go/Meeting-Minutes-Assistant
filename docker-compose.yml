@@ -29,6 +29,8 @@ services:
       S3_SSE_ENABLED: ${S3_SSE_ENABLED:-false}   # 本地 MinIO 无 KES，关闭 SSE；生产 COS/S3 设 true
       JWT_SECRET: ${JWT_SECRET:-dev-insecure-secret-change-me-in-production}
       AES_KEY: ${AES_KEY:-}
+      MMA_ADMIN_USERNAME: ${MMA_ADMIN_USERNAME:-}   # 需求变更：首位管理员（空则不初始化）
+      MMA_ADMIN_PASSWORD: ${MMA_ADMIN_PASSWORD:-}
       COST_LIMIT_DAILY_RMB: ${COST_LIMIT_DAILY_RMB:-5.0}
       COST_LIMIT_PER_TASK_RMB: ${COST_LIMIT_PER_TASK_RMB:-1.0}
       COST_AUTO_PAUSE: ${COST_AUTO_PAUSE:-false}

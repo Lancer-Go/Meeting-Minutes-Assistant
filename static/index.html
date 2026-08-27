@@ -50,7 +50,6 @@
   <div class="authbar" id="authbar">
     <span id="whoami"></span>
     <a href="/login.html" id="loginLink">登录</a>
-    <a href="/register.html" id="regLink">注册</a>
     <a href="javascript:logout()" id="logoutLink" class="hidden">登出</a>
   </div>
   <h1>会议纪要助手</h1>
@@ -91,7 +90,6 @@ const $ = (id) => document.getElementById(id);
   if (isLoggedIn()) {
     $('whoami').textContent = '已登录';
     $('loginLink').classList.add('hidden');
-    $('regLink').classList.add('hidden');
     $('logoutLink').classList.remove('hidden');
   }
 })();

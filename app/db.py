@@ -15,6 +15,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from sqlalchemy import (
+    Boolean,
     Column,
     Float,
     Integer,
@@ -110,10 +111,12 @@ class User(Base):
     id = Column(String, primary_key=True)
     username = Column(String, unique=True, nullable=False, index=True)
     password_hash = Column(String, nullable=False)
+    is_admin = Column(Boolean, default=False, nullable=False)  # 需求变更：管理员标记
     created_at = Column(String)
 
     def to_dict(self) -> dict:
-        return {"id": self.id, "username": self.username, "created_at": self.created_at}
+        return {"id": self.id, "username": self.username,
+                "is_admin": bool(self.is_admin), "created_at": self.created_at}
 
 
 class AuditLog(Base):
@@ -205,6 +208,7 @@ def _session(db_path: Path | None = None) -> Session:
 _MISSING_COLUMNS = {
     "tasks": {"user_id": Column("user_id", String)},
     "minutes": {"user_id": Column("user_id", String)},
+    "users": {"is_admin": Column("is_admin", Boolean, default=False)},
 }
 
 
@@ -427,10 +431,11 @@ def delete_comment(comment_id: str, db_path: Path | None = None) -> bool:
 
 
 # --------------------------------------------------------------------------- M3 · users 表（TG-4）
-def create_user(username: str, password_hash: str, db_path: Path | None = None) -> dict:
+def create_user(username: str, password_hash: str, db_path: Path | None = None,
+                is_admin: bool = False) -> dict:
     with _session(db_path) as s:
         u = User(id=uuid.uuid4().hex, username=username,
-                 password_hash=password_hash, created_at=_now())
+                 password_hash=password_hash, is_admin=is_admin, created_at=_now())
         s.add(u)
         s.commit()
         return u.to_dict()
@@ -451,6 +456,17 @@ def get_user(user_id: str, db_path: Path | None = None) -> dict | None:
         return row.to_dict() if row else None
 
 
+def set_user_admin(user_id: str, is_admin: bool, db_path: Path | None = None) -> dict:
+    """设置用户的管理员标记（需求变更：管理员初始化时对既有用户置 True）。"""
+    with _session(db_path) as s:
+        row = s.get(User, user_id)
+        if row is None:
+            raise KeyError(f"用户不存在: {user_id}")
+        row.is_admin = is_admin
+        s.commit()
+        return row.to_dict()
+
+
 # --------------------------------------------------------------------------- M3 · audit_logs 表（TG-4）
 def add_audit_log(user_id: str | None, action: str, target: str = "",
                   ip: str = "", db_path: Path | None = None) -> dict:
@@ -460,6 +476,19 @@ def add_audit_log(user_id: str | None, action: str, target: str = "",
         s.add(a)
         s.commit()
         return a.to_dict()
+
+
+def list_audit_logs(action: str | None = None, user_id: str | None = None,
+                    db_path: Path | None = None) -> list[dict]:
+    """列出审计日志（可选按 action / user_id 过滤，供验收/排查）。"""
+    with _session(db_path) as s:
+        stmt = select(AuditLog)
+        if action:
+            stmt = stmt.where(AuditLog.action == action)
+        if user_id is not None:
+            stmt = stmt.where(AuditLog.user_id == user_id)
+        rows = s.execute(stmt.order_by(AuditLog.created_at.desc())).scalars().all()
+        return [r.to_dict() for r in rows]
 
 
 # --------------------------------------------------------------------------- M3 · cost_stats 表（TG-6）

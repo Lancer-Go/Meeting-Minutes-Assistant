@@ -1,7 +1,8 @@
 """M1 · FastAPI 应用入口与 REST API；M2 扩展编辑/批注/历史检索；M3 生产化（鉴权/指标/成本/存储）。
 
-路由（对应 tech-stack.md B4 + M3）：
-  认证：  POST /api/auth/register / POST /api/auth/login
+路由（对应 tech-stack.md B4 + M3 + 需求变更·账号注册管控）：
+  认证：  POST /api/auth/login
+  管理：  POST /api/admin/users（管理员创建用户，require_admin 鉴权）
   任务：  POST /api/tasks（上传+异步执行）· GET /api/tasks · GET /api/tasks/{id}
           GET  /api/tasks/{id}/transcript · GET|PUT /api/tasks/{id}/minute
   批注：  POST|GET /api/tasks/{id}/comments · DELETE /api/tasks/{id}/comments/{cid}
@@ -9,7 +10,7 @@
   成本：  GET  /api/costs
   可观测：GET /metrics（Prometheus）
   健康：  GET /health
-  前端：  / · /minute.html · /login.html · /register.html
+  前端：  / · /minute.html · /login.html
 """
 from __future__ import annotations
 
@@ -35,7 +36,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from app import audit, config, cost, db, ingestion, rag, storage
 from app import metrics as metrics_mod
-from app.auth import get_current_user, login, register
+from app.auth import admin_create_user, ensure_admin_exists, get_current_user, login, require_admin
 from app.worker import regen_minute, run_task
 
 
@@ -73,6 +74,7 @@ async def lifespan(app: FastAPI):
     config.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     config.TASK_DIR.mkdir(parents=True, exist_ok=True)
     db.init_db()
+    ensure_admin_exists()
     logger.info("服务启动 data_dir=%s", config.DATA_DIR)
     yield
 
@@ -107,11 +109,6 @@ def login_page() -> FileResponse:
     return FileResponse(config.STATIC_DIR / "login.html")
 
 
-@app.get("/register.html")
-def register_page() -> FileResponse:
-    return FileResponse(config.STATIC_DIR / "register.html")
-
-
 # --------------------------------------------------------------------------- 健康与指标
 @app.get("/health")
 def health() -> dict:
@@ -127,14 +124,18 @@ def metrics_endpoint() -> Response:
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
-# --------------------------------------------------------------------------- 认证（TG-4）
-@app.post("/api/auth/register", status_code=201)
-def api_register(payload: dict, request: Request) -> dict:
+# --------------------------------------------------------------------------- 认证与管理（TG-4；需求变更：禁自助注册，改管理员创建用户）
+@app.post("/api/admin/users", status_code=201)
+def api_admin_create_user(payload: dict, request: Request,
+                          admin: dict | None = Depends(require_admin)) -> dict:
     try:
-        user = register(payload.get("username", ""), payload.get("password", ""))
+        user = admin_create_user(payload.get("username", ""),
+                                 payload.get("password", ""),
+                                 is_admin=bool(payload.get("is_admin", False)))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    audit.log("register_success", user["id"], user["username"], _ip(request))
+    audit.log("admin_create_user", admin.get("id") if admin else None,
+              user["username"], _ip(request))
     return {"user": user}
 
 

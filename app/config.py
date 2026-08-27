@@ -112,6 +112,12 @@ JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRE_MINUTES", str(7 * 24 * 60)))  # 默认 7 天
 PASSWORD_BCRYPT_ROUNDS = int(os.getenv("PASSWORD_BCRYPT_ROUNDS", "12"))
 
+# --------------------------------------------------------------------------- 需求变更 · 账号注册管控（管理员初始化）
+# 首位管理员：启动时若 MMA_ADMIN_USERNAME 不存在则以 MMA_ADMIN_PASSWORD 创建（is_admin=True，bcrypt）。
+# 两项均未配置则不触发初始化（本地开发/测试可无管理员）；已存在但 is_admin=False 时置 True 并告警。
+MMA_ADMIN_USERNAME = os.getenv("MMA_ADMIN_USERNAME", "")
+MMA_ADMIN_PASSWORD = os.getenv("MMA_ADMIN_PASSWORD", "")
+
 # --------------------------------------------------------------------------- M3 · 加密（TG-4）
 # AES-256-GCM 应用层加密（敏感字段/纪要内容）。空则从 JWT_SECRET 派生（开发默认）。
 AES_KEY = os.getenv("AES_KEY", "")

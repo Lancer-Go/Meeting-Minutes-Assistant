@@ -107,15 +107,30 @@ docker compose up -d    # api / worker / redis / postgres(pgvector) / minio / pr
 | TG-3 检索问答 | `app/rag.py` + `app/main.py` | `POST /api/qa` 余弦 top-k + 来源引用 + 越权隔离 + 降级 |
 | TG-4 评测 | `scripts/compare_models.py` + `scripts/eval_rag.py` + `eval/rag_eval.json` | 多模型对比 + RAG Eval 集 |
 
-## 需求变更（进行中 · 账号注册管控）
+## 需求变更（账号注册管控 · 已落地）
+
+禁自助注册 + 仅管理员/数据库加用户（mission §8 决策 8）。
 
 | 任务组 | 内容 | 状态 |
 | --- | --- | --- |
-| TG-0 | `users` 表加 `is_admin` + 迁移 | ⏳ 待实现 |
-| TG-1 | 管理员初始化（`MMA_ADMIN_USERNAME/PASSWORD`）+ `require_admin` 依赖 | ⏳ 待实现 |
-| TG-2 | 关闭 `POST /api/auth/register` + 新增 `POST /api/admin/users` | ⏳ 待实现 |
-| TG-3 | CLI `python -m app.cli create-user` + 文档 | ⏳ 待实现 |
-| TG-4 | 前端收敛（删 `register.html`）+ 测试 + 收口 | ⏳ 待实现 |
+| TG-0 | `users` 表加 `is_admin`（默认 False）+ `_MISSING_COLUMNS` 迁移 + `create_user` 扩展 | ✅ 已落地 |
+| TG-1 | 管理员初始化（`MMA_ADMIN_USERNAME/PASSWORD`，启动幂等）+ `require_admin` 依赖 | ✅ 已落地 |
+| TG-2 | 关闭 `POST /api/auth/register` + 新增 `POST /api/admin/users`（管理员 JWT + 审计） | ✅ 已落地 |
+| TG-3 | CLI `python -m app.cli create-user` + 使用文档 | ✅ 已落地 |
+| TG-4 | 前端收敛（删 `register.html`、登录页去注册入口）+ 测试 + docs 回填 | ✅ 已落地 |
+
+加用户方式（禁自助注册后）：
+
+```bash
+# 方式 A：管理员 API（需管理员 JWT）
+curl -X POST http://127.0.0.1:8000/api/admin/users \
+  -H "Authorization: Bearer <管理员token>" -H "Content-Type: application/json" \
+  -d '{"username":"alice","password":"secret123","is_admin":false}'
+
+# 方式 B：CLI 直接写库（生产需设 DATABASE_URL 指向 PostgreSQL）
+python -m app.cli create-user --username alice --password secret123
+python -m app.cli create-user --username admin --password secret123 --admin
+```
 
 ## 测试
 

@@ -289,7 +289,7 @@ ffmpeg -i input.mp4 -vn -ac 1 -ar 16000 -f wav output.wav
 | Task | id, source_file, stored_path, **user_id**, status, progress, progress_message, error, audio_duration_min, transcript_chars, cost_rmb, created_at / started_at / finished_at | ✅ M1 已落地；M3 迁 SQLAlchemy（sqlite/postgresql 双模式）+ `user_id` 越权隔离 |
 | Transcript | task_id, segments[]（start/end/text/speaker） | ✅ M2 已落地（`transcript.json` / `.txt`，segment 带 speaker） |
 | Minute | task_id, title, summary_md, decisions[], actions[], open_questions[], speakers[] | ✅ M2 已落地（`minutes` 表：title / template / summary_md / structured_json / edited_md；`comments` 表：author / text / quote） |
-| User | id, username, password_hash, is_admin, created_at | ✅ M3 已落地（自建账号，bcrypt 哈希）；🔄 需求变更：加 `is_admin` 标记，禁自助注册（仅管理员/数据库加用户） |
+| User | id, username, password_hash, is_admin, created_at | ✅ M3 已落地（自建账号，bcrypt 哈希）；✅ 需求变更已落地：加 `is_admin` 标记（默认 False），禁自助注册（仅管理员/数据库加用户） |
 | AuditLog | id, user_id, action, target, ip, created_at | ✅ M3 已落地（登录/任务/编辑/批注留痕） |
 | CostStat | id, task_id, user_id, date, llm_tokens_in/out/cache, llm_cost, asr_cost, total_cost | ✅ M3 已落地（按场/按日成本统计，联动限额告警） |
 | MinuteEmbedding | id, minute_id, task_id, user_id, chunk_index, text, embedding(JSON 文本列), created_at | ✅ M4 已落地（纪要切块向量索引；pgvector 扩展启用，检索用余弦 top-k） |
@@ -311,8 +311,8 @@ ffmpeg -i input.mp4 -vn -ac 1 -ar 16000 -f wav output.wav
 | DELETE | `/api/tasks/{id}/comments/{comment_id}` | 删除批注 | ✅ M2 |
 | GET | `/api/minutes` | 纪要历史列表 / 搜索（q / from / to / topic） | ✅ M2 |
 | GET | `/health` | 健康检查 | ✅ M1 |
-| POST | `/api/auth/register` | 注册（自建账号）——已关闭（禁自助注册） | ❌ 移除（需求变更） |
-| POST | `/api/admin/users` | 管理员创建用户（JWT + `is_admin` 鉴权） | 🔶 待实现（需求变更） |
+| POST | `/api/auth/register` | 注册（自建账号）——已关闭（禁自助注册） | ✅ 已移除（需求变更） |
+| POST | `/api/admin/users` | 管理员创建用户（JWT + `is_admin` 鉴权） | ✅ 已落地（需求变更） |
 | POST | `/api/auth/login` | 登录（返回 JWT，PyJWT HS256） | ✅ M3 |
 | GET | `/api/costs` | 成本统计（按日累计 / 明细 / 限额状态） | ✅ M3 |
 | GET | `/metrics` | Prometheus 指标端点 | ✅ M3 |
@@ -336,7 +336,7 @@ ffmpeg -i input.mp4 -vn -ac 1 -ar 16000 -f wav output.wav
 - **容器化**：Docker Compose 多服务一键编排（✅ M3 已落地：api / worker / redis / postgres / minio / prometheus / grafana）；K8s 云端集群留真实多机需要。M4 postgres 换 `pgvector/pgvector:pg16` 启用向量扩展。
 - **CI/CD**：GitHub Actions（lint → test → build → GHCR 镜像发布）—— ✅ M3 已落地（`.github/workflows/ci.yml`）。
 - **可观测**：结构化日志（JSON，✅ M1 `JsonFormatter`）+ `/metrics` + Prometheus 采集 + Grafana 面板 + 告警规则（✅ M3）。
-- **安全合规**：自建账号 + JWT、user_id 越权隔离、上传魔数校验、提示词注入缓解、AES-256（MinIO SSE + 应用层）+ TLS（Caddy 反代，✅ M3）；🔄 需求变更：禁自助注册（关闭 `/api/auth/register`），仅管理员（`is_admin`）或数据库/CLI 新增用户。
+- **安全合规**：自建账号 + JWT、user_id 越权隔离、上传魔数校验、提示词注入缓解、AES-256（MinIO SSE + 应用层）+ TLS（Caddy 反代，✅ M3）；✅ 需求变更已落地：禁自助注册（关闭 `/api/auth/register`），仅管理员（`is_admin`）或数据库/CLI（`python -m app.cli create-user`）新增用户。
 - **成本监控**：按场/按日成本统计（cost_stats）+ 日限额/单场超预算告警，联动 Prometheus（✅ M3）。
 
 ---
