@@ -1,8 +1,9 @@
 # M3 灰度上线部署指南（TG-7）
 
 > 部署目标：腾讯云服务器 + Docker Compose 单机多服务（用户 2026-08-25 确认）。
-> 当前环境（本地 Windows 无 Docker）下按 validation.md §5 降级为「本地模拟生产环境部署演练」，
-> 云服务器就绪后按本指南回填真实上线。
+> ✅ **已真实上线（2026-08-27）**：腾讯云 2C2G（广州 ap-guangzhou / Ubuntu 24.04）采用**裁剪版**服务集
+> （api / worker / redis / postgres，去掉 minio / prometheus / grafana，对象存储直接走腾讯云 COS），
+> 配 4G swap + worker 并发=1；升级到 4C8G 后恢复 minio / prometheus / grafana 即可跑全套。
 
 ## 1. 服务器准备（腾讯云轻量/云服务器，2C4G 起）
 
@@ -26,6 +27,8 @@ cp .env.example .env
 #   JWT_SECRET                               （⚠️ 换成 ≥32 字节随机串）
 #   POSTGRES_PASSWORD / GRAFANA_ADMIN_PASSWORD
 ```
+
+> **对象存储**：生产用腾讯云 COS 时，`.env` 设 `S3_ENDPOINT=https://cos.ap-guangzhou.myqcloud.com`、`S3_BUCKET`、`S3_REGION=ap-guangzhou`、`MMA_S3_ADDRESSING_STYLE=virtual`、`S3_SSE_ENABLED=true`、`MMA_ASR_URL_ENABLED=true`（compose 的 `S3_ENDPOINT` 已改为 `${S3_ENDPOINT:-http://minio:9000}`，`.env` 可覆盖默认 MinIO）。
 
 ## 3. 一键拉起
 
