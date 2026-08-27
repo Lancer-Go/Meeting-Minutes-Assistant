@@ -187,32 +187,22 @@ class ExtractiveLLM(LLMProvider):
         return "\n".join(lines)
 
 
-def _llm_from_alias(alias: str):
-    """从注册表别名构造 OpenAI 兼容 LLM（热切换入口）。"""
-
-    def factory(**kwargs):
-        spec = registry.resolve(alias)
-        return OpenAILikeLLM(spec.provider, spec.base_url,
-                             kwargs.get("api_key", "") or spec.api_key,
-                             kwargs.get("model", "") or spec.model,
-                             max_chars=kwargs.get("max_chars", config.LLM_MAX_CHARS))
-    return factory
-
-
 LLM_PROVIDERS = {
     "deepseek": DeepSeekLLM,
     "qwen": QwenLLM,
     "extractive": ExtractiveLLM,
-    "v4-pro": _llm_from_alias("v4-pro"),
-    "v4-flash": _llm_from_alias("v4-flash"),
-    "qwen-plus": _llm_from_alias("qwen-plus"),
 }
 
 
 def get_llm_provider(name: str, **kwargs) -> LLMProvider:
-    if name not in LLM_PROVIDERS:
-        raise ValueError(f"未知 LLM provider: {name}（可选 {list(LLM_PROVIDERS)}）")
-    return LLM_PROVIDERS[name](**kwargs)
+    if name in LLM_PROVIDERS:
+        return LLM_PROVIDERS[name](**kwargs)
+    # 未登记的别名 → 走模型注册表（支持经 MMA_LLM_ALIASES 扩展的任意 OpenAI 兼容模型，如 GPT/GLM/Kimi）
+    spec = registry.resolve(name)  # 未知别名抛 ValueError
+    return OpenAILikeLLM(spec.provider, spec.base_url,
+                         kwargs.get("api_key", "") or spec.api_key,
+                         kwargs.get("model", "") or spec.model,
+                         max_chars=kwargs.get("max_chars", config.LLM_MAX_CHARS))
 
 
 def has_cloud_credentials(name: str) -> bool:

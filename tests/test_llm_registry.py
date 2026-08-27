@@ -71,3 +71,62 @@ def test_extractor_alias_factory(monkeypatch):
     e = get_extractor_provider("v4-flash")
     assert e.model == "deepseek-v4-flash"
     assert e.base_url == "https://api.deepseek.com"
+
+
+def test_resolve_new_providers():
+    """内置供应商目录覆盖 GPT / GLM / Kimi（不止 qwen）。"""
+    assert registry.resolve("gpt-4o").provider == "openai"
+    assert registry.resolve("gpt-4o").base_url == "https://api.openai.com/v1"
+    assert registry.resolve("glm-4-plus").provider == "zhipu"
+    assert registry.resolve("moonshot-v1-8k").provider == "moonshot"
+
+
+def test_resolve_provider_name_to_alias():
+    assert registry.resolve("openai").alias == "gpt-4o"
+    assert registry.resolve("zhipu").alias == "glm-4-plus"
+    assert registry.resolve("moonshot").alias == "moonshot-v1-8k"
+
+
+def test_env_aliases_extension(monkeypatch):
+    """MMA_LLM_ALIASES 零改码扩展新模型别名。"""
+    from app import config
+    monkeypatch.setattr(config, "MMA_LLM_ALIASES",
+                        '{"gpt-4o-mini": {"provider": "openai", "model": "gpt-4o-mini"}}')
+    s = registry.resolve("gpt-4o-mini")
+    assert s.provider == "openai"
+    assert s.model == "gpt-4o-mini"
+    assert s.base_url == "https://api.openai.com/v1"
+
+
+def test_env_aliases_custom_base_url_and_key(monkeypatch):
+    """自定义供应商：显式 base_url + api_key_env，不依赖内置目录。"""
+    from app import config
+    monkeypatch.setattr(config, "MMA_LLM_ALIASES",
+                        '{"my-llm": {"provider": "custom", "base_url": "https://x/v1",'
+                        ' "model": "m", "api_key_env": "OPENAI_API_KEY"}}')
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-x")
+    s = registry.resolve("my-llm")
+    assert s.base_url == "https://x/v1"
+    assert s.model == "m"
+    assert s.api_key == "sk-x"
+    assert s.available() is True
+
+
+def test_get_llm_provider_new_alias(monkeypatch):
+    """get_llm_provider 对未登记别名回退到注册表（GPT 可用）。"""
+    from app import config
+    from app.summary import get_llm_provider
+    monkeypatch.setattr(config, "OPENAI_API_KEY", "fake-key")
+    llm = get_llm_provider("gpt-4o")
+    assert llm.model == "gpt-4o"
+    assert llm.base_url == "https://api.openai.com/v1"
+
+
+def test_get_extractor_provider_new_alias(monkeypatch):
+    """get_extractor_provider 对未登记别名回退到注册表（GLM 可用）。"""
+    from app import config
+    from app.extractor import get_extractor_provider
+    monkeypatch.setattr(config, "ZHIPU_API_KEY", "fake-key")
+    e = get_extractor_provider("glm-4-plus")
+    assert e.model == "glm-4-plus"
+    assert e.base_url == "https://open.bigmodel.cn/api/paas/v4"

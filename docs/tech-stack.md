@@ -64,8 +64,8 @@
 | **DeepSeek-V4 Pro（deepseek-v4-pro）** | 中文强、Agent 能力增强、1M 上下文；性价比高（M0 实测 V3，2026-08-25 升级 V4 Pro；成本与计费见 A6） | ✅ 已锁定（主模型） |
 | **DeepSeek-V4 Flash（deepseek-v4-flash）** | 价格约 Pro 1/3、并发上限更高（2500）、质量略低 | ✅ 已落地（M4 降本通道） |
 | Qwen（通义千问） | 中文好、性价比高 | ✅ 已落地（M4 备选，含 Function-Calling 抽取） |
-| GLM / Kimi | 国产、长文本友好 | 候选 |
-| GPT-4o / Claude | 通用能力强、成本较高 | 候选（对标外企场景） |
+| GLM / Kimi | 国产、长文本友好 | 🔶 可经模型注册表接入（OpenAI 兼容，配 `ZHIPU_API_KEY` / `MOONSHOT_API_KEY` 即可） |
+| GPT-4o / Claude | 通用能力强、成本较高 | 🔶 GPT 可经注册表接入（OpenAI 兼容）；Claude 非 OpenAI 兼容，需另加适配器 |
 
 #### 结构化输出与抽取
 

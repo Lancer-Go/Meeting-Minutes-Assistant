@@ -223,32 +223,22 @@ class RuleExtractor(ExtractorProvider):
         return StructuredMinute(decisions=decisions, actions=actions, open_questions=questions)
 
 
-def _extractor_from_alias(alias: str):
-    """从注册表别名构造 OpenAI 兼容抽取器（热切换入口）。"""
-
-    def factory(**kwargs):
-        spec = registry.resolve(alias)
-        return OpenAILikeExtractor(spec.provider, spec.base_url,
-                                   kwargs.get("api_key", "") or spec.api_key,
-                                   kwargs.get("model", "") or spec.model,
-                                   kwargs.get("max_chars", config.LLM_MAX_CHARS))
-    return factory
-
-
 EXTRACTORS = {
     "deepseek": DeepSeekExtractor,
     "qwen": QwenExtractor,
     "rule": RuleExtractor,
-    "v4-pro": _extractor_from_alias("v4-pro"),
-    "v4-flash": _extractor_from_alias("v4-flash"),
-    "qwen-plus": _extractor_from_alias("qwen-plus"),
 }
 
 
 def get_extractor_provider(name: str, **kwargs) -> ExtractorProvider:
-    if name not in EXTRACTORS:
-        raise ValueError(f"未知 extractor: {name}（可选 {list(EXTRACTORS)}）")
-    return EXTRACTORS[name](**kwargs)
+    if name in EXTRACTORS:
+        return EXTRACTORS[name](**kwargs)
+    # 未登记的别名 → 走模型注册表（支持任意 OpenAI 兼容 Function-Calling 模型，如 GPT/GLM/Kimi）
+    spec = registry.resolve(name)  # 未知别名抛 ValueError
+    return OpenAILikeExtractor(spec.provider, spec.base_url,
+                               kwargs.get("api_key", "") or spec.api_key,
+                               kwargs.get("model", "") or spec.model,
+                               kwargs.get("max_chars", config.LLM_MAX_CHARS))
 
 
 def has_cloud_credentials(name: str) -> bool:

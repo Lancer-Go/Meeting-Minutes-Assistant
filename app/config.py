@@ -52,6 +52,8 @@ XFYUN_API_SECRET = os.getenv("XFYUN_API_SECRET", "")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
 QWEN_API_KEY = os.getenv("QWEN_API_KEY", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+ZHIPU_API_KEY = os.getenv("ZHIPU_API_KEY", "")        # 智谱 GLM（OpenAI 兼容）
+MOONSHOT_API_KEY = os.getenv("MOONSHOT_API_KEY", "")  # 月之暗面 Kimi（OpenAI 兼容）
 
 # --------------------------------------------------------------------------- Provider 默认
 DEFAULT_ASR = os.getenv("MMA_ASR", "tencent")            # tencent | aliyun | whisper | iflytek
@@ -128,6 +130,10 @@ METRICS_ENABLED = _bool("MMA_METRICS_ENABLED", "true")
 MMA_LLM_ALIAS = os.getenv("MMA_LLM_ALIAS", "v4-pro")
 MMA_LLM_MODEL = os.getenv("MMA_LLM_MODEL", "")          # 覆盖注册表具体模型名（空 = 用注册表默认）
 MMA_QWEN_MODEL = os.getenv("MMA_QWEN_MODEL", "qwen-plus")
+# 额外模型别名（JSON，零改码扩展任意 OpenAI 兼容供应商）：
+#   例 {"gpt-4o-mini": {"provider": "openai", "model": "gpt-4o-mini"}}
+# 可选字段 base_url（默认取供应商目录）、api_key_env（默认取供应商对应密钥环境变量）。
+MMA_LLM_ALIASES = os.getenv("MMA_LLM_ALIASES", "")
 
 # Embedding（TG-2）：OpenAI 兼容云 API（如 bge-m3）。base_url 与 api_key 均配置才启用；
 # 缺任一 → 纪要向量化跳过、RAG 降级关键词检索（不阻断主链路）。
