@@ -84,6 +84,7 @@
 - tech-stack 更新至 v0.6，回填 M2 实际选型（Jinja2 三模板 / 腾讯云 SpeakerDiarization / 占位话者兜底 / minutes-comments 表 / M2 REST 路由 / 覆盖率 82%）；roadmap「下一步」由推进 M2 更正为推进 M3；README 补充 M2 任务组与 Eval 用法（4e9351c）
 - tech-stack 更新至 v0.4，回填 M1 实际选型（FastAPI / BackgroundTasks / SQLite+本地FS / Docker Compose 落地；B4 数据模型与 REST API 对齐 M1 实现）；roadmap「下一步」由启动 M0 更正为推进 M2（0c13169）
 - tech-stack 更新至 v0.3，回填 M0 实测锁定厂商（ASR 腾讯云 16k_zh / LLM DeepSeek-chat），关联《选型决策记录》（a2ada36）
+- roadmap 登记需求变更「账号注册管控」（2026-08-28）；mission 更新至 v0.3（§8 新增决策 8：禁自助注册 + 管理员/数据库加用户）；tech-stack 更新至 v0.11（B4 User 表加 `is_admin`、API 表关闭 `/api/auth/register` 增 `/api/admin/users`、B6 安全回填）（df57ed1）
 
 ## [0.2.0] - 2026-08-24
 
