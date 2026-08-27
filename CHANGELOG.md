@@ -45,6 +45,7 @@
 - 接入云 ASR 实测：阿里云 NLS 实时语音转写 + 腾讯云录音文件识别（b3499f0）
 
 ### 变更
+- 腾讯云 ASR 新增 URL 识别（`SourceType=0`）：音频上传公网对象存储后整段一次提交（无 base64 5MB 限制、无需切片），话者分离在全局音频上完成，修复切片导致的说话人过度切分（1 名学员被拆成 1/2/3 三个标签）。`TencentASR` 重构出 `_client/_build_request/_poll_result/_segments_from_response` 并新增 `_recognize_url`，`transcribe` 增 `url` 参数；`storage` 增 `presigned_url`；`config` 增 `MMA_ASR_URL_ENABLED`（默认关，需公网可达对象存储）；`pipeline` 按配置上传取 URL、失败回退 base64 切片并记 `asr_url_mode`（d8ec398）
 - `Dockerfile` 的 apt/pip 源切换为阿里云国内镜像（`mirrors.aliyun.com`），修复 Docker 构建流量走 Clash 代理（fake-ip）拉取 deb.debian.org 被 502 导致 `apt-get install` 失败的问题（e0faa88）
 - `db` 由标准库 sqlite3 迁移为 SQLAlchemy 双模式（sqlite/postgresql），新增 users/audit_logs/cost_stats 表与 tasks.user_id 越权隔离（369c8a6）
 - `worker` 由 BackgroundTasks 直调改为 Celery + Redis 队列（`MMA_USE_CELERY` 开关，本地开发回退），输入/产物走 storage 层（S3 / 本地 FS），成功后落 cost_stats（369c8a6）
