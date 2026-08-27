@@ -101,6 +101,18 @@ function setStatus(text, cls) {
   if (cls) { el.classList.remove('hidden'); } else { el.classList.add('hidden'); }
 }
 
+function fmtSpeed(bps) {
+  if (bps >= 1048576) return (bps / 1048576).toFixed(1) + ' MB/s';
+  if (bps >= 1024) return (bps / 1024).toFixed(0) + ' KB/s';
+  return bps.toFixed(0) + ' B/s';
+}
+
+function fmtDur(sec) {
+  sec = Math.max(0, Math.round(sec));
+  if (sec < 60) return sec + ' 秒';
+  return Math.floor(sec / 60) + ' 分 ' + (sec % 60) + ' 秒';
+}
+
 async function upload() {
   const fileInput = $('file');
   if (!fileInput.files.length) { setStatus('请先选择文件', 'err'); return; }
@@ -112,15 +124,30 @@ async function upload() {
   $('bar').style.width = '0%';
   setStatus('上传中…');
 
-  const form = new FormData();
-  form.append('file', file);
+  const t0 = Date.now();
+  let lastTs = 0;
   try {
-    const resp = await apiFetch('/api/tasks', { method: 'POST', body: form });
-    const data = await resp.json();
-    if (!resp.ok) { setStatus('上传失败：' + (data.detail || resp.status), 'err'); return; }
-    poll(data.id);
+    const resp = await uploadFile('/api/tasks', file, (loaded, total) => {
+      const now = Date.now();
+      if (now - lastTs < 100) return;            // 100ms 节流，避免高频重绘
+      lastTs = now;
+      const pct = total ? Math.round(loaded / total * 100) : 0;
+      const secs = Math.max(0.001, (now - t0) / 1000);
+      const speed = loaded / secs;               // 字节/秒
+      const eta = total > loaded ? (total - loaded) / speed : 0;
+      $('bar').style.width = pct + '%';
+      setStatus('已上传 ' + pct + '%（' + fmtSpeed(speed) + '，剩余 ' + fmtDur(eta) + '）');
+    });
+    if (!resp.ok) {
+      setStatus('上传失败：' + ((resp.data && resp.data.detail) || resp.status), 'err');
+      $('progressWrap').classList.add('hidden');
+      return;
+    }
+    setStatus('上传完成，排队处理中…');
+    poll(resp.data.id);
   } catch (e) {
     setStatus('上传失败：' + e.message, 'err');
+    $('progressWrap').classList.add('hidden');
   } finally {
     btn.disabled = false;
   }
