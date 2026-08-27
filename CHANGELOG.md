@@ -66,6 +66,7 @@
 - `storage` 的 S3 上传由强制 SSE-AES256 改为 `S3_SSE_ENABLED` 可配置（代码默认开，本地 MinIO 无 KES 时 compose 默认关），修复上传报 "KMS is not configured" 导致任务 500 的问题（0d655f8）
 
 ### 文档
+- tech-stack 更新至 v0.9：说话人分离/ASR 两处回填 URL 识别（SourceType=0，音频上传 COS 整段提交→全局话者分离）、`SpeakerId=0` 合法性告警、存储/模块职责表补腾讯云 COS（virtual 寻址）；roadmap 与选型决策记录补 2026-08-27 变更（话者分离修复 + COS 接入）（33eea7e）
 - tech-stack 更新至 v0.8，回填 M3 实际选型（Celery+Redis / PostgreSQL+MinIO / 自建账号+JWT / Prometheus+Grafana / GitHub Actions / Locust / 成本监控），B4 数据模型与 API、B5 测试、B6 部署对齐 M3 实现；roadmap「当前进度」更新为 M3 已落地、TG-7 灰度上线待云服务器就绪（369c8a6）
 - tech-stack 更新至 v0.7，新增 A6「成本模型与计费参考」：DeepSeek 2026-08 官方价格表（V4 Pro / Flash / Vision-Exp，含高峰/空闲与缓存命中价）、扣费规则、V4 Pro 单场成本估算（推算 ≈ ¥0.2~0.8/场·空闲，标注假设待 M3 重测）、flash 降本备选；选型决策记录补 V4 Pro 价格备注（5e774e8）
 - tech-stack 更新至 v0.6，回填 M2 实际选型（Jinja2 三模板 / 腾讯云 SpeakerDiarization / 占位话者兜底 / minutes-comments 表 / M2 REST 路由 / 覆盖率 82%）；roadmap「下一步」由推进 M2 更正为推进 M3；README 补充 M2 任务组与 Eval 用法（4e9351c）
