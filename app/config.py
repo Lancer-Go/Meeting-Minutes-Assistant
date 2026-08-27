@@ -82,11 +82,15 @@ ASR_URL_ENABLED = _bool("MMA_ASR_URL_ENABLED", "false")
 # DATABASE_URL 驱动 SQLAlchemy：空 = 沿用 SQLite DB_PATH（本地开发）；postgresql:// 生产。
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 # 对象存储：S3_ENDPOINT 为空时用本地 FS 兜底（stored_path 存对象键 / 相对路径）。
+# 支持 S3 兼容（MinIO）与腾讯云 COS（endpoint 指向 cos.<region>.myqcloud.com）。
 S3_ENDPOINT = os.getenv("S3_ENDPOINT", "")
 S3_BUCKET = os.getenv("S3_BUCKET", "mma")
-S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY", "")
-S3_SECRET_KEY = os.getenv("S3_SECRET_KEY", "")
+# S3/COS 凭证：未显式配置时回退到腾讯云 TENCENT_SECRET_ID/KEY（COS 与云 ASR 同账号通用）。
+S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY", "") or TENCENT_SECRET_ID
+S3_SECRET_KEY = os.getenv("S3_SECRET_KEY", "") or TENCENT_SECRET_KEY
 S3_REGION = os.getenv("S3_REGION", "us-east-1")
+# 寻址风格：auto（默认，MinIO/本地）/ virtual（腾讯云 COS 强制 virtual，path 报 PathStyleDomainForbidden）。
+S3_ADDRESSING_STYLE = os.getenv("MMA_S3_ADDRESSING_STYLE", "auto")
 # 服务端加密（SSE-AES256，TG-4 加密存储）：生产 COS/S3 开启；本地 MinIO 无 KES(KMS) 时须关闭，
 # 否则 boto3 上传报 "KMS is not configured"。本地 compose 默认已设 false。
 S3_SSE_ENABLED = _bool("S3_SSE_ENABLED", "true")

@@ -55,15 +55,14 @@ def identify_roles(segments: list[Segment]) -> list[Speaker]:
     # 主持人：出现次数最多（或命中开场/收尾句式）
     host = max(names, key=lambda n: (stats[n]["count"], -stats[n]["start"]))
 
-    # 汇报人：剩余中命中「汇报」句式或字符数最多者
+    # 汇报人：仅在剩余说话人命中「汇报/介绍/说明/讲解」句式时才判定；
+    # 否则不强行指定（其余默认参会者），避免两人会议把唯一非主持人误标成「汇报人」。
     rest = [n for n in names if n != host]
     presenter = None
     for n in rest:
         if _PRESENTER_RE.search(stats[n]["text"]):
             presenter = n
             break
-    if presenter is None and rest:
-        presenter = max(rest, key=lambda n: stats[n]["chars"])
 
     out: list[Speaker] = []
     for n in names:

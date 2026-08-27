@@ -15,25 +15,29 @@ class Storage:
     """对象存储统一接口。由 `get_storage()` 按配置选择后端。"""
 
     def __init__(self, s3: bool, endpoint: str = "", bucket: str = "",
-                 access_key: str = "", secret_key: str = "", region: str = ""):
+                 access_key: str = "", secret_key: str = "", region: str = "",
+                 addressing_style: str = "auto"):
         self.s3 = s3
         self.endpoint = endpoint
         self.bucket = bucket
         self.access_key = access_key
         self.secret_key = secret_key
         self.region = region
+        self.addressing_style = addressing_style
         self._client = None
 
     # -- S3 客户端（惰性，避免本地模式引入 boto3 开销）--
     def _s3_client(self):
         if self._client is None:
             import boto3
+            from botocore.config import Config as BotoConfig
             self._client = boto3.client(
                 "s3",
                 endpoint_url=self.endpoint,
                 aws_access_key_id=self.access_key,
                 aws_secret_access_key=self.secret_key,
                 region_name=self.region,
+                config=BotoConfig(s3={"addressing_style": self.addressing_style}),
             )
         return self._client
 
@@ -50,18 +54,18 @@ class Storage:
     def put_file(self, key: str, local_path: Path) -> str:
         """上传本地文件到 key，返回存储键。本地模式零拷贝（文件须在 DATA_DIR 下）。
 
-        S3 模式启用服务端加密（SSE-AES256）满足 NFR 加密存储（TG-4）。
+        S3/COS 模式用单次 `put_object`（非 multipart）：腾讯云 COS 的 S3 兼容接口对
+        boto3 分片上传（>8MB 自动 multipart）报 MissingContentLength，单 PUT 兼容性最好。
+        启用服务端加密（SSE-AES256）满足 NFR 加密存储（TG-4）。
         """
         key = key.lstrip("/")
         if self.s3:
             self._ensure_bucket()
+            kwargs: dict = {"Bucket": self.bucket, "Key": key}
             if config.S3_SSE_ENABLED:
-                self._s3_client().upload_file(
-                    str(local_path), self.bucket, key,
-                    ExtraArgs={"ServerSideEncryption": "AES256"})
-            else:
-                self._s3_client().upload_file(
-                    str(local_path), self.bucket, key)
+                kwargs["ServerSideEncryption"] = "AES256"
+            with open(local_path, "rb") as f:
+                self._s3_client().put_object(Body=f, **kwargs)
         else:
             dst = config.DATA_DIR / key
             dst.parent.mkdir(parents=True, exist_ok=True)
@@ -157,6 +161,7 @@ def get_storage() -> Storage:
             access_key=config.S3_ACCESS_KEY,
             secret_key=config.S3_SECRET_KEY,
             region=config.S3_REGION,
+            addressing_style=config.S3_ADDRESSING_STYLE,
         )
     return _storage
 

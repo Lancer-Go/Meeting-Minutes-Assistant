@@ -41,6 +41,19 @@ def test_mixed_unlabeled_ignored():
     assert roles["1"] == ROLE_PRESENTER  # 命中「汇报」→ 汇报人
 
 
+def test_two_speakers_no_presenter():
+    # 两人会议、非主持人不含「汇报」句式 → 不应被误标为汇报人，应默认参会者
+    segs = [
+        Segment(0, 1, "大家好，今天我们讲生态", speaker="S1"),
+        Segment(1, 2, "我只会用 code cloud", speaker="S2"),
+        Segment(2, 3, "你对于整个生态要有了解", speaker="S1"),
+        Segment(3, 4, "不会用，很麻烦", speaker="S2"),
+    ]
+    roles = {s.name: s.role for s in identify_roles(segs)}
+    assert roles["S1"] == ROLE_HOST
+    assert roles["S2"] == ROLE_PARTICIPANT  # 无汇报句式 → 参会者（不是汇报人）
+
+
 def test_all_unlabeled_placeholder():
     # 全部未标注：回退单说话人占位（主持人），保留旧行为
     roles = identify_roles([Segment(0, 1, "开会了"), Segment(1, 2, "继续")])
