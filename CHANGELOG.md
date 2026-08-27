@@ -23,6 +23,7 @@
 -->
 
 ### 新增
+- 新增账号注册管控需求变更任务准备（plan / requirements / validation 三文档）：禁止自助注册（关闭 `POST /api/auth/register`、删 `register.html`）+ 管理员/数据库加用户（`POST /api/admin/users` 管理员鉴权 + `users.is_admin` 迁移 + `MMA_ADMIN_USERNAME/PASSWORD` 启动引导管理员 + CLI `python -m app.cli create-user`）；范围最小集（不做禁用/删除/重置密码/列用户）（196ba24）
 - 实现 M4 多模型注册表 `app/llm_registry.py`（别名 → provider/base_url/model/api_key，`MMA_LLM_ALIAS` 配置化热切换，无需改代码）：接入 deepseek-v4-flash 降本通道与 Qwen Function-Calling 抽取；summary/extractor 走注册表、去掉类内硬编码（1e4bbe4）
 - 实现 M4 纪要向量化（pgvector + 云 embedding）：compose 的 postgres 换 `pgvector/pgvector:pg16`（+`deploy/init-pgvector.sql` 启用扩展）；`db` 新增 `minute_embeddings` 表（JSON 文本列，跨 SQLite/PG）；新增 `app/embedding.py`（`EmbeddingProvider` 抽象 + OpenAI 兼容实现 + 切块）；`worker` 在纪要持久化后自动向量化（失败不阻断主链路）（1e4bbe4）
 - 实现 M4 检索问答 RAG：新增 `app/rag.py`（余弦 top-k 检索 + 来源引用 + user_id 越权隔离 + 关键词降级兜底）与 `POST /api/qa`；`static/index.html` 新增「智能问答」入口（展示答案 + 来源链接）（1e4bbe4）
