@@ -59,6 +59,7 @@
 - 用真实会议（80min）完成三家 ASR 对比与 DeepSeek 端到端纪要，锁定选型（ASR 腾讯云 16k_zh / LLM DeepSeek-chat），回填《选型决策记录》（b3499f0）
 
 ### 修复
+- 修复 M2 角色识别/话者分离三处缺陷：①腾讯云 `SpeakerDiarization` 返回的 `SpeakerId` 为 int，`0` 是合法说话人（主讲/主持人），原 `str(getattr(r,"SpeakerId","") or "")` 用 `or ""` 兜底把 0 误判为空丢弃，导致话者分离覆盖率仅 ~5%（1668/1756 段空 speaker）；新增 `_speaker_to_str` 保留 0。②`app/role.py` 把空 speaker 段归为假「S1」并因段数最多被判成主持人，改为未标注段不参与统计（全部无标注才回退单说话人占位）。③`standard`/`brief` 模板不渲染「说话人/角色」节，角色识别结果在默认纪要中不可见，两模板补齐该节；`pipeline` 话者分离判定改用 `speaker_coverage`（==0 才走 diarization 兜底）并在 metrics 记录覆盖率（0c34044）
 - `storage` 的 S3 上传由强制 SSE-AES256 改为 `S3_SSE_ENABLED` 可配置（代码默认开，本地 MinIO 无 KES 时 compose 默认关），修复上传报 "KMS is not configured" 导致任务 500 的问题（0d655f8）
 
 ### 文档
