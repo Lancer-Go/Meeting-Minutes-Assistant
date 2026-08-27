@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 
 from app import audio, config, cost
+from app import llm_registry as registry
 from app import metrics as metrics_mod
 from app.asr import get_asr_provider
 from app.asr import has_cloud_credentials as asr_has_creds
@@ -61,15 +62,21 @@ def resolve_asr_name(requested: str) -> str:
 
 
 def resolve_llm_name(requested: str) -> str:
-    """云端 LLM 无密钥时降级到本地抽取式基线。"""
-    if requested != "extractive" and not llm_has_creds(requested):
+    """云端 LLM 无密钥时降级到本地抽取式基线（按当前生效别名判断密钥）。"""
+    if requested == "extractive":
+        return "extractive"
+    alias = registry.active_summary_alias(requested)
+    if not llm_has_creds(alias):
         return config.LLM_FALLBACK
     return requested
 
 
 def resolve_extractor_name(requested: str) -> str:
-    """云端抽取器无密钥时降级到本地规则兜底。"""
-    if requested != "rule" and not extractor_has_creds(requested):
+    """云端抽取器无密钥时降级到本地规则兜底（按当前生效别名判断密钥）。"""
+    if requested == "rule":
+        return "rule"
+    alias = registry.active_extractor_alias(requested)
+    if not extractor_has_creds(alias):
         return config.EXTRACTOR_FALLBACK
     return requested
 
@@ -164,14 +171,16 @@ def run(input_path: Path, out_dir: Path, asr_name: str, llm_name: str,
     # 4) 角色识别（M2）
     speakers = identify_roles(transcript.segments)
 
-    # 5) 纪要 + 结构化抽取（M2）
+    # 5) 纪要 + 结构化抽取（M2；M4 起经模型注册表热切换）
     _report(80, "生成纪要")
-    llm_provider = get_llm_provider(llm_name)
+    llm_alias = registry.active_summary_alias(llm_name)
+    llm_provider = get_llm_provider(llm_alias)
     t0 = time.time()
     body_md = llm_provider.summarize(transcript)
     llm_elapsed = time.time() - t0
 
-    extractor_provider = get_extractor_provider(extractor_name)
+    extractor_alias = registry.active_extractor_alias(extractor_name)
+    extractor_provider = get_extractor_provider(extractor_alias)
     t0 = time.time()
     extracted = extractor_provider.extract(transcript)
     extractor_elapsed = time.time() - t0
@@ -223,10 +232,11 @@ def run(input_path: Path, out_dir: Path, asr_name: str, llm_name: str,
         "audio_duration_min": round(audio_minutes, 2),
         "asr": {"provider": transcript.provider, "model": transcript.model,
                 "elapsed_s": metrics["asr_elapsed_s"], "cost_rmb": round(asr_cost_real, 4)},
-        "llm": {"provider": llm_name, "model": llm_model,
+        "llm": {"provider": llm_name, "model": llm_model, "alias": llm_alias,
                 "elapsed_s": round(llm_elapsed, 2), "cost_rmb": round(llm_cost_real, 4)},
         "extractor": {"provider": extractor_name,
                       "model": getattr(extractor_provider, "model", ""),
+                      "alias": extractor_alias,
                       "elapsed_s": round(extractor_elapsed, 2)},
         "transcript_chars": transcript.char_count,
         "structured": {

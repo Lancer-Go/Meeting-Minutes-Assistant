@@ -16,6 +16,7 @@ import time
 from abc import ABC, abstractmethod
 
 from app import config
+from app import llm_registry as registry
 from app.asr import Transcript
 from app.schemas import (
     ActionItem,
@@ -72,17 +73,20 @@ class ExtractorProvider(ABC):
 
 
 # --------------------------------------------------------------------------- 云端（Function-Calling）
-class DeepSeekExtractor(ExtractorProvider):
-    name = "deepseek"
-    model = config.DEEPSEEK_MODEL
+class OpenAILikeExtractor(ExtractorProvider):
+    """OpenAI 兼容 Function-Calling 抽取（DeepSeek / Qwen 通用，注册表驱动）。"""
 
-    def __init__(self, api_key: str = "", model: str = "", max_chars: int = 12000):
-        self.api_key = api_key or config.DEEPSEEK_API_KEY
-        self.model = model or config.DEEPSEEK_MODEL
+    def __init__(self, name: str, base_url: str, api_key: str, model: str,
+                 max_chars: int = 12000):
+        self.name = name
+        self.base_url = base_url
+        self.api_key = api_key
+        self.model = model
         self.max_chars = max_chars
         self._last_usage: dict[str, int] = {}
         if not self.api_key:
-            raise RuntimeError("缺少 DEEPSEEK_API_KEY。请在 .env 配置后重试（或改用 rule 兜底）。")
+            raise RuntimeError(
+                f"缺少 {name.upper()}_API_KEY。请在 .env 配置后重试（或改用 rule 兜底）。")
 
     @property
     def last_usage(self) -> dict[str, int]:
@@ -93,7 +97,7 @@ class DeepSeekExtractor(ExtractorProvider):
         """一次 chat completion 携带三个抽取 tool，收集所有 tool call 参数。"""
         from openai import OpenAI  # lazy import
 
-        client = OpenAI(api_key=self.api_key, base_url="https://api.deepseek.com")
+        client = OpenAI(api_key=self.api_key, base_url=self.base_url)
         resp = client.chat.completions.create(
             model=self.model,
             messages=[
@@ -161,6 +165,26 @@ class DeepSeekExtractor(ExtractorProvider):
         )
 
 
+class DeepSeekExtractor(OpenAILikeExtractor):
+    name = "deepseek"
+
+    def __init__(self, api_key: str = "", model: str = "", max_chars: int = 12000):
+        spec = registry.resolve("v4-pro")
+        super().__init__("deepseek", spec.base_url, api_key or spec.api_key,
+                         model or spec.model, max_chars)
+
+
+class QwenExtractor(OpenAILikeExtractor):
+    """Qwen 抽取（Function-Calling，注册表驱动）。"""
+
+    name = "qwen"
+
+    def __init__(self, api_key: str = "", model: str = "", max_chars: int = 12000):
+        spec = registry.resolve("qwen-plus")
+        super().__init__("qwen", spec.base_url, api_key or spec.api_key,
+                         model or spec.model, max_chars)
+
+
 # --------------------------------------------------------------------------- 本地规则兜底
 class RuleExtractor(ExtractorProvider):
     """本地规则抽取（无需密钥/联网）：按行正则匹配负责人 / 截止 / 决议 / 待办关键词。"""
@@ -201,18 +225,27 @@ class RuleExtractor(ExtractorProvider):
 
 EXTRACTORS = {
     "deepseek": DeepSeekExtractor,
+    "qwen": QwenExtractor,
     "rule": RuleExtractor,
 }
 
 
 def get_extractor_provider(name: str, **kwargs) -> ExtractorProvider:
-    if name not in EXTRACTORS:
-        raise ValueError(f"未知 extractor: {name}（可选 {list(EXTRACTORS)}）")
-    return EXTRACTORS[name](**kwargs)
+    if name in EXTRACTORS:
+        return EXTRACTORS[name](**kwargs)
+    # 未登记的别名 → 走模型注册表（支持任意 OpenAI 兼容 Function-Calling 模型，如 GPT/GLM/Kimi）
+    spec = registry.resolve(name)  # 未知别名抛 ValueError
+    return OpenAILikeExtractor(spec.provider, spec.base_url,
+                               kwargs.get("api_key", "") or spec.api_key,
+                               kwargs.get("model", "") or spec.model,
+                               kwargs.get("max_chars", config.LLM_MAX_CHARS))
 
 
 def has_cloud_credentials(name: str) -> bool:
-    """判断抽取器是否已配置密钥（供降级判断）。"""
-    if name == "deepseek":
-        return bool(config.DEEPSEEK_API_KEY)
-    return True  # rule 本地无需密钥
+    """判断抽取器是否已配置密钥（供降级判断）。rule 本地无需密钥。"""
+    if name == "rule":
+        return True
+    try:
+        return registry.resolve(name).available()
+    except ValueError:
+        return True

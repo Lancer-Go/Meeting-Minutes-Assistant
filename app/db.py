@@ -9,6 +9,7 @@ M3（TG-2/TG-4/TG-6）：标准库 sqlite3 → SQLAlchemy 双模式（sqlite:// 
 """
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import date, datetime
 from pathlib import Path
@@ -142,6 +143,28 @@ class CostStat(Base):
     llm_cost_rmb = Column(Float, default=0.0)
     asr_cost_rmb = Column(Float, default=0.0)
     total_cost_rmb = Column(Float, default=0.0)
+    created_at = Column(String)
+
+    def to_dict(self) -> dict:
+        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
+
+
+class MinuteEmbedding(Base):
+    """M4 · 纪要向量块（TG-2）：纪要正文按 chunk 切分后的向量索引。
+
+    `embedding` 存 JSON 数组文本（跨 SQLite/PG 通用）；生产 PG 已启用 pgvector 扩展，
+    检索侧用 Python 余弦计算（见 app/rag.py），可迁移为原生 vector 列提升规模。
+    """
+
+    __tablename__ = "minute_embeddings"
+
+    id = Column(String, primary_key=True)
+    minute_id = Column(String, index=True)   # = minutes.task_id（本仓库 minutes 主键即 task_id）
+    task_id = Column(String, index=True)
+    user_id = Column(String, index=True, nullable=True)  # 越权隔离（同 minutes）
+    chunk_index = Column(Integer, default=0)
+    text = Column(Text)
+    embedding = Column(Text)  # JSON 数组字符串，如 "[0.1, 0.2, ...]"
     created_at = Column(String)
 
     def to_dict(self) -> dict:
@@ -479,3 +502,49 @@ def list_cost_stats(user_id: str | None = None, day: str | None = None,
             stmt = stmt.where(CostStat.date == day)
         rows = s.execute(stmt.order_by(CostStat.created_at.desc())).scalars().all()
         return [r.to_dict() for r in rows]
+
+
+# --------------------------------------------------------------------------- M4 · minute_embeddings（TG-2）
+def replace_embeddings(task_id: str, user_id: str | None,
+                       chunks: list[dict], db_path: Path | None = None) -> int:
+    """整表重建某 task 的向量块。chunks: list[dict(text, vector:list[float])]。返回写入条数。"""
+    with _session(db_path) as s:
+        s.execute(delete(MinuteEmbedding).where(MinuteEmbedding.task_id == task_id))
+        for i, c in enumerate(chunks):
+            s.add(MinuteEmbedding(
+                id=uuid.uuid4().hex,
+                minute_id=task_id,
+                task_id=task_id,
+                user_id=user_id,
+                chunk_index=i,
+                text=c["text"],
+                embedding=json.dumps(c["vector"]),
+                created_at=_now(),
+            ))
+        s.commit()
+        return len(chunks)
+
+
+def list_embeddings(user_id: str | None = None, db_path: Path | None = None) -> list[dict]:
+    """列出向量块（可选按 user_id 过滤，供 RAG 检索）。"""
+    with _session(db_path) as s:
+        stmt = select(MinuteEmbedding)
+        if user_id is not None:
+            stmt = stmt.where(MinuteEmbedding.user_id == user_id)
+        rows = s.execute(stmt.order_by(MinuteEmbedding.created_at.asc())).scalars().all()
+        return [r.to_dict() for r in rows]
+
+
+def count_embeddings(task_id: str, db_path: Path | None = None) -> int:
+    """某任务向量块数（验收 V3：纪要完成后有对应向量）。"""
+    with _session(db_path) as s:
+        stmt = (select(func.count()).select_from(MinuteEmbedding)
+                .where(MinuteEmbedding.task_id == task_id))
+        return int(s.execute(stmt).scalar() or 0)
+
+
+def delete_embeddings(task_id: str, db_path: Path | None = None) -> bool:
+    with _session(db_path) as s:
+        res = s.execute(delete(MinuteEmbedding).where(MinuteEmbedding.task_id == task_id))
+        s.commit()
+        return res.rowcount > 0

@@ -71,6 +71,13 @@
   <h2>纪要检索</h2>
   <input type="search" id="search" placeholder="按关键词 / 主题搜索历史纪要…" style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--card);">
   <ul id="searchResults" style="margin-top:8px;"></ul>
+
+  <h2>智能问答（RAG）</h2>
+  <div class="upload">
+    <input type="text" id="qaInput" placeholder="例：上次会议谁负责跟进客户需求？" style="flex:1;min-width:220px;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--card);">
+    <button id="qaBtn">提问</button>
+  </div>
+  <div id="qaResult" class="result hidden" style="white-space:pre-wrap;"></div>
 </main>
 
 <script src="/static/auth.js"></script>
@@ -202,6 +209,45 @@ async function searchMinutes(q) {
 $('search').addEventListener('input', (e) => searchMinutes(e.target.value));
 $('uploadBtn').addEventListener('click', upload);
 loadHistory();
+
+// M4 · 智能问答（RAG）
+async function ask() {
+  const q = $('qaInput').value.trim();
+  if (!q) return;
+  const btn = $('qaBtn');
+  const el = $('qaResult');
+  btn.disabled = true;
+  try {
+    const resp = await apiFetch('/api/qa', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: q })
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      el.innerHTML = '<b>❌ ' + escapeHtml(data.detail || '提问失败') + '</b>';
+    } else {
+      const src = (data.sources || []).map((s) =>
+        `<li><a href="/minute.html?id=${s.task_id}">${escapeHtml(s.title || s.task_id)}</a>` +
+        (s.similarity != null ? `<span class="tag succeeded">相似度 ${s.similarity}</span>` : '') +
+        `<br><small style="color:var(--muted)">${escapeHtml(s.snippet || '')}</small></li>`
+      ).join('');
+      el.innerHTML = '<b>💬 回答</b>' +
+        (data.degraded ? ' <small style="color:var(--muted)">（已降级为关键词检索）</small>' : '') +
+        '<div style="margin:8px 0">' + escapeHtml(data.answer || '') + '</div>' +
+        '<b>来源</b><ul>' + (src || '<li>无</li>') + '</ul>';
+    }
+    el.classList.remove('hidden');
+  } catch (e) {
+    el.innerHTML = '提问失败：' + escapeHtml(e.message);
+    el.classList.remove('hidden');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+$('qaBtn').addEventListener('click', ask);
+$('qaInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') ask(); });
 </script>
 </body>
 </html>

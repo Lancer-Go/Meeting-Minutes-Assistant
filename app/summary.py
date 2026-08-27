@@ -9,6 +9,7 @@ import time
 from abc import ABC, abstractmethod
 
 from app import config
+from app import llm_registry as registry
 from app.asr import Transcript
 from app.security import guard_prompt
 
@@ -81,6 +82,10 @@ class OpenAILikeLLM(LLMProvider):
         self._last_usage = self._usage_from_resp(usage) if usage else {}
         return resp.choices[0].message.content or ""
 
+    def chat(self, system: str, user: str) -> str:
+        """单轮对话（供 RAG 问答等复用）。"""
+        return self._chat(system, user)
+
     def _chunk_text(self, text: str, size: int, overlap: int = 200) -> list[str]:
         if size <= 0 or len(text) <= size:
             return [text] if text else []
@@ -114,17 +119,20 @@ class DeepSeekLLM(OpenAILikeLLM):
     name = "deepseek"
 
     def __init__(self, api_key: str = "", model: str = "", max_chars: int = 12000):
-        super().__init__("deepseek", "https://api.deepseek.com",
-                         api_key or config.DEEPSEEK_API_KEY,
-                         model or config.DEEPSEEK_MODEL, max_chars)
+        spec = registry.resolve("v4-pro")
+        super().__init__("deepseek", spec.base_url,
+                         api_key or spec.api_key,
+                         model or spec.model, max_chars)
 
 
 class QwenLLM(OpenAILikeLLM):
     name = "qwen"
 
-    def __init__(self, api_key: str = "", model: str = "qwen-plus", max_chars: int = 12000):
-        super().__init__("qwen", "https://dashscope.aliyuncs.com/compatible-mode/v1",
-                         api_key or config.QWEN_API_KEY, model, max_chars)
+    def __init__(self, api_key: str = "", model: str = "", max_chars: int = 12000):
+        spec = registry.resolve("qwen-plus")
+        super().__init__("qwen", spec.base_url,
+                         api_key or spec.api_key,
+                         model or spec.model, max_chars)
 
 
 class ExtractiveLLM(LLMProvider):
@@ -187,15 +195,21 @@ LLM_PROVIDERS = {
 
 
 def get_llm_provider(name: str, **kwargs) -> LLMProvider:
-    if name not in LLM_PROVIDERS:
-        raise ValueError(f"未知 LLM provider: {name}（可选 {list(LLM_PROVIDERS)}）")
-    return LLM_PROVIDERS[name](**kwargs)
+    if name in LLM_PROVIDERS:
+        return LLM_PROVIDERS[name](**kwargs)
+    # 未登记的别名 → 走模型注册表（支持经 MMA_LLM_ALIASES 扩展的任意 OpenAI 兼容模型，如 GPT/GLM/Kimi）
+    spec = registry.resolve(name)  # 未知别名抛 ValueError
+    return OpenAILikeLLM(spec.provider, spec.base_url,
+                         kwargs.get("api_key", "") or spec.api_key,
+                         kwargs.get("model", "") or spec.model,
+                         max_chars=kwargs.get("max_chars", config.LLM_MAX_CHARS))
 
 
 def has_cloud_credentials(name: str) -> bool:
-    """判断指定 LLM 是否已配置密钥（供降级判断）。"""
-    if name == "deepseek":
-        return bool(config.DEEPSEEK_API_KEY)
-    if name == "qwen":
-        return bool(config.QWEN_API_KEY)
-    return True  # extractive 本地无需密钥
+    """判断指定 LLM 是否已配置密钥（供降级判断）。extractive 本地无需密钥。"""
+    if name == "extractive":
+        return True
+    try:
+        return registry.resolve(name).available()
+    except ValueError:
+        return True

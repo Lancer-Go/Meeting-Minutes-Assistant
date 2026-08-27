@@ -33,10 +33,10 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
-from app import audit, config, cost, db, ingestion, storage
+from app import audit, config, cost, db, ingestion, rag, storage
 from app import metrics as metrics_mod
 from app.auth import get_current_user, login, register
-from app.worker import run_task
+from app.worker import regen_minute, run_task
 
 
 class JsonFormatter(logging.Formatter):
@@ -345,6 +345,42 @@ def list_costs(day: str | None = None,
         "per_task_limit_rmb": config.COST_LIMIT_PER_TASK_RMB,
         "auto_pause": config.COST_AUTO_PAUSE,
     }
+
+
+# --------------------------------------------------------------------------- M4 · 检索问答（TG-3）
+@app.post("/api/qa")
+def api_qa(payload: dict, request: Request,
+           user: dict | None = Depends(get_current_user)) -> dict:
+    question = (payload.get("question") or "").strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="问题不能为空")
+    top_k = int(payload.get("top_k") or config.MMA_RAG_TOP_K)
+    model = payload.get("model")  # 可选模型别名（v4-pro / v4-flash / qwen-plus）
+    result = rag.answer(question, user_id=user["id"] if user else None,
+                        top_k=top_k, model_alias=model)
+    audit.log("qa_ask", user["id"] if user else None, question[:64], _ip(request))
+    return result
+
+
+# --------------------------------------------------------------------------- M4 · 重生成（TG-1）
+@app.post("/api/tasks/{task_id}/regen")
+def api_regen(task_id: str, payload: dict,
+              request: Request,
+              user: dict | None = Depends(get_current_user)) -> dict:
+    user_id = user["id"] if user else None
+    task = db.get_task(task_id, user_id=user_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    if task.get("status") != db.SUCCEEDED:
+        raise HTTPException(status_code=400, detail="任务尚未完成，无法重生成纪要")
+    try:
+        minute = regen_minute(task_id,
+                              model_alias=payload.get("model"),
+                              template=payload.get("template"))
+    except (KeyError, RuntimeError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    audit.log("minute_regen", user_id, task_id, _ip(request))
+    return minute
 
 
 def _ip(request: Request | None) -> str:
