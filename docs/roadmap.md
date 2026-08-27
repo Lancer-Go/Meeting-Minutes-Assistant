@@ -230,7 +230,7 @@ timeline
 
 ---
 
-> 📌 **当前进度**：M0/M1/M2 已完成；M3 生产化代码与交付物已落地，TG-7 灰度上线待云服务器就绪；**M4 · 智能化** 已落地「多模型切换 + 检索问答 RAG」两项（模型注册表热切换 v4-pro/v4-flash/qwen-plus、pgvector + 云 embedding 纪要自动向量化、`POST /api/qa` 带来源引用 + 越权隔离 + 降级、`POST /api/tasks/{id}/regen` 换模型重生成、RAG Eval 集 + `compare_models.py` 灰度对比）。G6（IM/待办同步）/ G7（实时转写）留后期。下一步：云服务器就绪后完成 M3 上线收口与 M4 云端实测（bge-m3 向量命中率 / 三模型对比云端跑批）。
+> 📌 **当前进度**：M0/M1/M2 已完成；M3 生产化代码与交付物已落地，TG-7 灰度上线待云服务器就绪；**M4 · 智能化** 已落地「多模型切换 + 检索问答 RAG」两项（模型注册表热切换 v4-pro/v4-flash/qwen-plus、pgvector + 云 embedding 纪要自动向量化、`POST /api/qa` 带来源引用 + 越权隔离 + 降级、`POST /api/tasks/{id}/regen` 换模型重生成、RAG Eval 集 + `compare_models.py` 灰度对比）。G6（IM/待办同步）/ G7（实时转写）留后期。下一步：云服务器就绪后完成 M3 上线收口与 M4 云端实测（bge-m3 向量命中率 / 三模型对比云端跑批）。另规划需求变更「账号注册管控」：禁止自助注册，仅管理员或数据库直接新增用户（详见下条变更记录）。
 >
 > 🔄 变更（2026-08-25）：LLM 主方案由 DeepSeek-V3 升级为 DeepSeek-V4 Pro（deepseek-v4-pro）；转写阶段新增按切片推进的进度展示（「第 x/N 段已完成」）；M2 落地结构化抽取（Function-Calling + 规则兜底）、说话人分离（腾讯云 SpeakerDiarization + pyannote/占位兜底）、角色识别（规则 + LLM 辅助）、Jinja2 三模板、编辑批注与历史检索、Eval 评测集与脚本。
 >
@@ -239,3 +239,5 @@ timeline
 > 🔄 变更（2026-08-27）：M2 角色识别/话者分离修复 + 腾讯云 COS 接入——修复腾讯 SpeakerDiarization 的 `SpeakerId=0` 被 `or ""` 误丢（话者分离覆盖率 5%→100%）、空 speaker 归假「S1」抢主持人、标准/精简模板缺「说话人/角色」节；新增 ASR URL 识别（SourceType=0，音频上传 COS 整段提交→全局话者分离，实测话者人数 4→2 且转写快 17 倍），对象存储接入腾讯云 COS（S3 兼容 + virtual 寻址 + put_object）；角色识别不再强推「汇报人」（仅命中汇报句式才判，否则参会者）。
 >
 > 🔄 变更（2026-08-27，M4）：智能化落地——`llm_registry` 模型注册表（`MMA_LLM_ALIAS` 配置化热切换，去 summary/extractor 类内硬编码）、接入 deepseek-v4-flash 降本通道与 Qwen Function-Calling 抽取、`POST /api/tasks/{id}/regen` 换模型/模板重生成、pgvector（compose 换 `pgvector/pgvector:pg16`）+ `minute_embeddings` 表 + `EmbeddingProvider`（OpenAI 兼容云 embedding）+ 纪要自动向量化（失败不阻断）、`POST /api/qa` 检索问答（余弦 top-k + 来源引用 + user_id 越权隔离 + 关键词降级兜底）+ 前端问答入口、`compare_models.py` 多模型对比与 `eval_rag.py` / `eval/rag_eval.json` RAG Eval 集。范围聚焦「多模型切换 + RAG」两项，G6/G7 留后期。
+>
+> 🔄 变更（2026-08-28，需求变更·账号注册管控）：规划「禁止自助注册，仅管理员/数据库加用户」——关闭公开注册接口 `POST /api/auth/register`，新增受管理员 JWT 保护的创建用户接口 `POST /api/admin/users`；`users` 表新增 `is_admin` 标记（默认 False）；首位管理员由环境变量 `MMA_ADMIN_USERNAME`/`MMA_ADMIN_PASSWORD` 启动时确保存在（bcrypt 哈希）；数据库加用户走 CLI `python -m app.cli create-user`（附使用文档）；前端删除 `register.html` 仅保留登录页。范围最小集（暂不做禁用/删除/重置密码/列用户），代码实现留后续。
