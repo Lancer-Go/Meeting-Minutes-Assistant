@@ -23,6 +23,8 @@
 -->
 
 ### 新增
+- 新增上传进度实时反馈需求变更任务准备（plan / requirements / validation 三文档）：上传阶段实时进度「已上传 xx% + 速度(MB/s) + 剩余时间」，XHR `upload.onprogress` 前端单点改造、后端零改动，补齐 M1 极简前端无上传进度反馈的短板（b064bb8）
+- 实现上传进度实时反馈：`static/auth.js` 新增 `uploadFile`（XHR 上传 + `upload.onprogress` 字节进度 + Bearer 鉴权 / 401 登出 / onerror / onabort）；`static/index.html` `upload()` 改走 XHR，进度回调 100ms 节流展示「已上传 xx%（速度，剩余时间）」，上传完成衔接「排队处理中」，失败 / 中断明确提示；纯前端改造、后端零改动（2db9cb1）
 - 新增账号注册管控需求变更任务准备（plan / requirements / validation 三文档）：禁止自助注册（关闭 `POST /api/auth/register`、删 `register.html`）+ 管理员/数据库加用户（`POST /api/admin/users` 管理员鉴权 + `users.is_admin` 迁移 + `MMA_ADMIN_USERNAME/PASSWORD` 启动引导管理员 + CLI `python -m app.cli create-user`）；范围最小集（不做禁用/删除/重置密码/列用户）（196ba24）
 - 实现 M4 多模型注册表 `app/llm_registry.py`（别名 → provider/base_url/model/api_key，`MMA_LLM_ALIAS` 配置化热切换，无需改代码）：接入 deepseek-v4-flash 降本通道与 Qwen Function-Calling 抽取；summary/extractor 走注册表、去掉类内硬编码（1e4bbe4）
 - 实现 M4 纪要向量化（pgvector + 云 embedding）：compose 的 postgres 换 `pgvector/pgvector:pg16`（+`deploy/init-pgvector.sql` 启用扩展）；`db` 新增 `minute_embeddings` 表（JSON 文本列，跨 SQLite/PG）；新增 `app/embedding.py`（`EmbeddingProvider` 抽象 + OpenAI 兼容实现 + 切块）；`worker` 在纪要持久化后自动向量化（失败不阻断主链路）（1e4bbe4）

@@ -44,4 +44,31 @@
       a.remove();
     } catch (e) { alert(e.message); }
   };
+
+  // 带进度回调的文件上传（XHR）：fetch 无上传进度能力，改用 XMLHttpRequest 的
+  // xhr.upload.onprogress 采集真实字节进度。行为对齐 apiFetch（Bearer 头 / 401 登出）。
+  window.uploadFile = function (url, file, onProgress) {
+    return new Promise(function (resolve, reject) {
+      var xhr = new XMLHttpRequest();
+      xhr.open('POST', url);
+      var token = window.getToken();
+      if (token) xhr.setRequestHeader('Authorization', 'Bearer ' + token);
+      if (xhr.upload && onProgress) {
+        xhr.upload.onprogress = function (e) {
+          if (e.lengthComputable) onProgress(e.loaded, e.total);
+        };
+      }
+      xhr.onload = function () {
+        if (xhr.status === 401) { window.logout(); reject(new Error('未登录或登录已过期')); return; }
+        var data = null;
+        try { data = JSON.parse(xhr.responseText); } catch (e2) { /* 非 JSON 响应 */ }
+        resolve({ status: xhr.status, ok: xhr.status >= 200 && xhr.status < 300, data: data });
+      };
+      xhr.onerror = function () { reject(new Error('网络错误，上传中断')); };
+      xhr.onabort = function () { reject(new Error('上传已取消')); };
+      var form = new FormData();
+      form.append('file', file);
+      xhr.send(form);
+    });
+  };
 })();
