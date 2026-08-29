@@ -15,7 +15,6 @@ import re
 import time
 from abc import ABC, abstractmethod
 
-from app import config
 from app import llm_registry as registry
 from app.asr import Transcript
 from app.schemas import (
@@ -76,13 +75,11 @@ class ExtractorProvider(ABC):
 class OpenAILikeExtractor(ExtractorProvider):
     """OpenAI 兼容 Function-Calling 抽取（DeepSeek / Qwen 通用，注册表驱动）。"""
 
-    def __init__(self, name: str, base_url: str, api_key: str, model: str,
-                 max_chars: int = 12000):
+    def __init__(self, name: str, base_url: str, api_key: str, model: str):
         self.name = name
         self.base_url = base_url
         self.api_key = api_key
         self.model = model
-        self.max_chars = max_chars
         self._last_usage: dict[str, int] = {}
         if not self.api_key:
             raise RuntimeError(
@@ -128,9 +125,6 @@ class OpenAILikeExtractor(ExtractorProvider):
     def extract(self, transcript: Transcript) -> StructuredMinute:
         t0 = time.time()
         text = transcript.text
-        if len(text) > self.max_chars:
-            # 长文本截断为前 max_chars（抽取聚焦决议/行动项，通常分布全文但受上下文限制）
-            text = text[: self.max_chars]
 
         merged: dict = {"decisions": [], "actions": [], "open_questions": []}
         try:
@@ -168,10 +162,10 @@ class OpenAILikeExtractor(ExtractorProvider):
 class DeepSeekExtractor(OpenAILikeExtractor):
     name = "deepseek"
 
-    def __init__(self, api_key: str = "", model: str = "", max_chars: int = 12000):
+    def __init__(self, api_key: str = "", model: str = ""):
         spec = registry.resolve("v4-pro")
         super().__init__("deepseek", spec.base_url, api_key or spec.api_key,
-                         model or spec.model, max_chars)
+                         model or spec.model)
 
 
 class QwenExtractor(OpenAILikeExtractor):
@@ -179,10 +173,10 @@ class QwenExtractor(OpenAILikeExtractor):
 
     name = "qwen"
 
-    def __init__(self, api_key: str = "", model: str = "", max_chars: int = 12000):
+    def __init__(self, api_key: str = "", model: str = ""):
         spec = registry.resolve("qwen-plus")
         super().__init__("qwen", spec.base_url, api_key or spec.api_key,
-                         model or spec.model, max_chars)
+                         model or spec.model)
 
 
 # --------------------------------------------------------------------------- 本地规则兜底
@@ -237,8 +231,7 @@ def get_extractor_provider(name: str, **kwargs) -> ExtractorProvider:
     spec = registry.resolve(name)  # 未知别名抛 ValueError
     return OpenAILikeExtractor(spec.provider, spec.base_url,
                                kwargs.get("api_key", "") or spec.api_key,
-                               kwargs.get("model", "") or spec.model,
-                               kwargs.get("max_chars", config.LLM_MAX_CHARS))
+                               kwargs.get("model", "") or spec.model)
 
 
 def has_cloud_credentials(name: str) -> bool:

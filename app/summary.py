@@ -1,6 +1,6 @@
 """M1 · summary 模块 — 纪要生成（可插拔 LLM Provider）。
 
-抽象 `LLMProvider`：deepseek / qwen 走 OpenAI 兼容接口（需密钥），长文本 Map-Reduce 分块；
+抽象 `LLMProvider`：deepseek / qwen 走 OpenAI 兼容接口（需密钥），全文单次调用（1M 上下文，无需分块）；
 extractive 为本地抽取式基线（离线兜底）。主用 DeepSeek-V4 Pro（deepseek-v4-pro，由 M0 锁定的 DeepSeek-V3 升级）。
 """
 from __future__ import annotations
@@ -8,22 +8,17 @@ from __future__ import annotations
 import time
 from abc import ABC, abstractmethod
 
-from app import config
 from app import llm_registry as registry
 from app.asr import Transcript
 from app.security import guard_prompt
 
 SYSTEM_PROMPT = (
-    "你是会议纪要助手。请根据下面的会议转写内容生成结构化会议纪要，用中文输出 Markdown，包含：\n"
-    "1) 会议主题与基本信息；2) 核心结论/决议；3) 讨论要点摘要；\n"
-    "4) 行动项清单（负责人、事项、优先级、截止时间，缺失则标注「待定」）；5) 待跟进/未决问题。\n"
-    "忠实转写内容，不要臆造原文没有的信息。"
-)
-
-MAP_PROMPT = "请对下面的会议转写片段生成结构化要点摘要（决议 / 讨论要点 / 行动项），用中文 Markdown 列表输出："
-REDUCE_PROMPT = (
-    "以下是同一场会议多个片段的要点摘要，请合并去重，输出完整结构化会议纪要 Markdown，包含：\n"
-    "会议主题、核心决议、讨论要点、行动项清单、待跟进问题。"
+    "你是会议纪要助手。请根据下面的会议转写内容生成会议纪要的正文，用中文输出 Markdown，"
+    "包含「## 会议主题与基本信息」和「## 讨论要点」两个章节：\n"
+    "1) 会议主题与基本信息（主题、形式、参与人、日期）；\n"
+    "2) 讨论要点（按议题组织，忠实概括各议题的讨论内容）。\n"
+    "忠实转写内容，不要臆造原文没有的信息。\n"
+    "注意：核心决议、行动项、待跟进问题由结构化抽取器单独生成，正文无需重复输出。"
 )
 
 
@@ -36,16 +31,16 @@ class LLMProvider(ABC):
         ...
 
 
+# ---------------------------------------------------------------- 云 LLM
 class OpenAILikeLLM(LLMProvider):
-    """OpenAI 兼容接口（DeepSeek / Qwen / OpenAI）。长文本超阈值走 Map-Reduce。"""
+    """OpenAI 兼容接口（DeepSeek / Qwen / OpenAI）。全文单次调用（1M 上下文，无需分块）。"""
 
     def __init__(self, name: str, base_url: str, api_key: str, model: str,
-                 max_chars: int = 12000, temperature: float = 0.2):
+                 temperature: float = 0.2):
         self.name = name
         self.base_url = base_url
         self.api_key = api_key
         self.model = model
-        self.max_chars = max_chars
         self.temperature = temperature
         self._last_usage: dict[str, int] = {}
         if not self.api_key:
@@ -86,31 +81,10 @@ class OpenAILikeLLM(LLMProvider):
         """单轮对话（供 RAG 问答等复用）。"""
         return self._chat(system, user)
 
-    def _chunk_text(self, text: str, size: int, overlap: int = 200) -> list[str]:
-        if size <= 0 or len(text) <= size:
-            return [text] if text else []
-        # 防止 overlap >= size 导致步长非正而无限循环
-        overlap = min(overlap, size - 1)
-        step = max(1, size - overlap)
-        chunks = []
-        start = 0
-        while start < len(text):
-            chunks.append(text[start:start + size])
-            start += step
-        return chunks
-
     def summarize(self, transcript: Transcript) -> str:
+        """单次调用全文生成纪要（deepseek-v4-pro 1M 上下文，无需分块）。"""
         t0 = time.time()
-        text = transcript.text
-        if len(text) <= self.max_chars:
-            result = self._chat(SYSTEM_PROMPT, guard_prompt(text))
-        else:
-            # Map-Reduce：分块总结 → 合并
-            partials = []
-            for i, chunk in enumerate(self._chunk_text(text, self.max_chars)):
-                partials.append(f"## 片段 {i + 1}\n" + self._chat(MAP_PROMPT, guard_prompt(chunk)))
-            merged = "\n\n".join(partials)
-            result = self._chat(REDUCE_PROMPT, guard_prompt(merged))
+        result = self._chat(SYSTEM_PROMPT, guard_prompt(transcript.text))
         self.last_elapsed = time.time() - t0
         return result
 
@@ -118,27 +92,28 @@ class OpenAILikeLLM(LLMProvider):
 class DeepSeekLLM(OpenAILikeLLM):
     name = "deepseek"
 
-    def __init__(self, api_key: str = "", model: str = "", max_chars: int = 12000):
+    def __init__(self, api_key: str = "", model: str = ""):
         spec = registry.resolve("v4-pro")
         super().__init__("deepseek", spec.base_url,
                          api_key or spec.api_key,
-                         model or spec.model, max_chars)
+                         model or spec.model)
 
 
 class QwenLLM(OpenAILikeLLM):
     name = "qwen"
 
-    def __init__(self, api_key: str = "", model: str = "", max_chars: int = 12000):
+    def __init__(self, api_key: str = "", model: str = ""):
         spec = registry.resolve("qwen-plus")
         super().__init__("qwen", spec.base_url,
                          api_key or spec.api_key,
-                         model or spec.model, max_chars)
+                         model or spec.model)
 
 
+# ---------------------------------------------------------------- 本地基线
 class ExtractiveLLM(LLMProvider):
     """本地抽取式基线（无需密钥/联网）：按时间窗挑代表性片段组织成纪要。
 
-    用于离线跑通链路，质量低于 LLM；接入密钥后自动升级为 LLM 纪要。
+    用于离线跑通 pipeline，质量低于 LLM；接入密钥后自动升级为 LLM 纪要。
     """
 
     name = "extractive"
@@ -201,8 +176,7 @@ def get_llm_provider(name: str, **kwargs) -> LLMProvider:
     spec = registry.resolve(name)  # 未知别名抛 ValueError
     return OpenAILikeLLM(spec.provider, spec.base_url,
                          kwargs.get("api_key", "") or spec.api_key,
-                         kwargs.get("model", "") or spec.model,
-                         max_chars=kwargs.get("max_chars", config.LLM_MAX_CHARS))
+                         kwargs.get("model", "") or spec.model)
 
 
 def has_cloud_credentials(name: str) -> bool:

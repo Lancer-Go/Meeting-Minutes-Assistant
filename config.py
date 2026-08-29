@@ -43,5 +43,4 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 DEFAULT_ASR = os.getenv("MMA_ASR", "whisper")            # whisper | aliyun | tencent | iflytek
 DEFAULT_LLM = os.getenv("MMA_LLM", "extractive")         # deepseek | qwen | extractive
 WHISPER_MODEL = os.getenv("MMA_WHISPER_MODEL", "base")   # tiny/base/small/medium/large-v3
-LLM_MAX_CHARS = int(os.getenv("MMA_LLM_MAX_CHARS", "12000"))  # Map-Reduce 分块阈值（字符）
 DEEPSEEK_MODEL = os.getenv("MMA_DEEPSEEK_MODEL", "deepseek-v4-pro")  # LLM 主用模型（DeepSeek-V4 Pro）
