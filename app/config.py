@@ -29,7 +29,7 @@ STATIC_DIR = ROOT / "static"                # 前端静态文件
 # FR-01 格式白名单：MP4 / MKV / WAV / MP3 / M4A
 ALLOWED_EXTENSIONS = {".mp4", ".mkv", ".wav", ".mp3", ".m4a"}
 MAX_FILE_SIZE_BYTES = int(float(os.getenv("MMA_MAX_FILE_SIZE_MB", "2048")) * 1024 * 1024)  # 默认 2GB
-MAX_DURATION_SECONDS = float(os.getenv("MMA_MAX_DURATION_SECONDS", "7200"))               # 单场 ≤ 2 小时
+MAX_DURATION_SECONDS = float(os.getenv("MMA_MAX_DURATION_SECONDS", "18000"))              # 单场 ≤ 5 小时
 
 # --------------------------------------------------------------------------- 服务
 HOST = os.getenv("MMA_HOST", "127.0.0.1")
@@ -59,7 +59,6 @@ MOONSHOT_API_KEY = os.getenv("MOONSHOT_API_KEY", "")  # 月之暗面 Kimi（Open
 DEFAULT_ASR = os.getenv("MMA_ASR", "tencent")            # tencent | aliyun | whisper | iflytek
 DEFAULT_LLM = os.getenv("MMA_LLM", "deepseek")           # deepseek | qwen | extractive
 WHISPER_MODEL = os.getenv("MMA_WHISPER_MODEL", "base")   # tiny/base/small/medium/large-v3
-LLM_MAX_CHARS = int(os.getenv("MMA_LLM_MAX_CHARS", "12000"))  # Map-Reduce 分块阈值（字符）
 DEEPSEEK_MODEL = os.getenv("MMA_DEEPSEEK_MODEL", "deepseek-v4-pro")  # LLM 主用模型（DeepSeek-V4 Pro）
 
 # --------------------------------------------------------------------------- M2 结构化增强

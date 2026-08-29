@@ -28,21 +28,26 @@ def test_extractive_empty():
     assert "会议纪要" in md
 
 
-def test_chunk_text():
-    llm = OpenAILikeLLM("test", "http://x", "fake-key", "m", max_chars=100)
-    chunks = llm._chunk_text("a" * 250, 100, overlap=20)
-    assert len(chunks) >= 3
-    assert all(len(c) <= 100 for c in chunks)
-
-
-def test_chunk_text_short():
-    llm = OpenAILikeLLM("test", "http://x", "fake-key", "m", max_chars=100)
-    assert llm._chunk_text("abc", 100) == ["abc"]
-
-
 def test_openai_like_requires_key():
     with pytest.raises(RuntimeError):
         OpenAILikeLLM("test", "http://x", "", "m")
+
+
+def test_summarize_single_shot_long(monkeypatch):
+    """长文本（超过旧 12000 阈值）仍单次调用 _chat，无分块/截断。"""
+    llm = OpenAILikeLLM("test", "http://x", "fake-key", "m")
+    long_text = "会议讨论内容" * 4000  # 24000 字符，超过旧阈值
+    calls = []
+
+    def fake_chat(system, user):
+        calls.append(user)
+        return "纪要正文"
+
+    monkeypatch.setattr(llm, "_chat", fake_chat)
+    md = llm.summarize(Transcript(text=long_text, provider="whisper", model="base"))
+    assert md == "纪要正文"
+    assert len(calls) == 1
+    assert long_text in calls[0]  # 全文完整传入，未被截断/切块
 
 
 def test_get_llm_provider():

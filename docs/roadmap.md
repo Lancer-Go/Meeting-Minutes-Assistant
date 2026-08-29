@@ -8,7 +8,7 @@
 > 本文定义从概念验证到智能化的**分阶段实现计划**。每个阶段统一按四要素展开：
 > **🎯 目标 → 🔧 详细实现 → 🛠 实现方法 → 📋 工作顺序 → ✅ 验证成果**。
 > 阶段之间有强依赖，必须串行推进（前一阶段的验证成果是后一阶段的输入）。
-> 关键决策（云端 SaaS 优先 / 走云 API / 中文为主 / ≤ 2 小时 / 利润 0 性价比优先）见 [mission.md §8](mission.md)。
+> 关键决策（云端 SaaS 优先 / 走云 API / 中文为主 / ≤ 5 小时 / 利润 0 性价比优先）见 [mission.md §8](mission.md)。
 
 ## 总览
 
@@ -75,7 +75,7 @@ timeline
 交付可用的完整闭环（本地开发环境，ASR/LLM 走云 API），满足 FR-01~07，无技术背景用户可自助"上传 → 得到纪要"。
 
 ### 🔧 详细实现
-- **文件上传**：支持视频/音频（MP4 / MKV / WAV / MP3 / M4A），格式与大小校验（单场 ≤ 2 小时）。
+- **文件上传**：支持视频/音频（MP4 / MKV / WAV / MP3 / M4A），格式与大小校验（单场 ≤ 5 小时）。
 - **任务管理**：创建任务、状态机（pending / running / succeeded / failed）、进度展示（转写阶段按切片推进「第 x/N 段已完成」）。
 - **全链路自动化**：上传后自动 音频提取 → 转写 → 纪要生成 → 导出。
 - **输出**：Markdown 纪要下载；进度与运行日志可见。
@@ -243,3 +243,5 @@ timeline
 > 🔄 变更（2026-08-28，需求变更·账号注册管控）：落地「禁止自助注册，仅管理员/数据库加用户」——关闭公开注册接口 `POST /api/auth/register`（前端删除 `register.html`、登录页去注册入口），新增受管理员 JWT 保护的创建用户接口 `POST /api/admin/users`；`users` 表新增 `is_admin` 标记（默认 False）+ `_MISSING_COLUMNS` 迁移；首位管理员由环境变量 `MMA_ADMIN_USERNAME`/`MMA_ADMIN_PASSWORD` 启动时确保存在（bcrypt 哈希，幂等）；`require_admin` 依赖（未登录 401 / 非管理员 403 / 鉴权关闭放行）+ `admin_create_user` 审计留痕；数据库加用户走 CLI `python -m app.cli create-user`（附使用文档）。范围最小集（暂不做禁用/删除/重置密码/列用户）。
 >
 > 🔄 变更（2026-08-28，需求变更·上传进度实时反馈）：落地「上传阶段实时进度」——`static/auth.js` 新增 `uploadFile`（XHR 上传 + `upload.onprogress` 字节进度 + Bearer 鉴权 / 401 登出 / onerror / onabort），`static/index.html` `upload()` 改走 XHR 并 100ms 节流展示「已上传 xx%（速度，剩余时间）」，上传完成衔接「排队处理中」、失败 / 中断明确提示；纯前端改造、后端零改动。
+>
+> 🔄 变更（2026-08-29，纪要质量修正）：定位并修复纪要质量低的根因——① 删除 Map-Reduce 分块（`app/summary.py`/根 `summarize.py` 的 `_chunk_text`/`MAP_PROMPT`/`REDUCE_PROMPT`/`max_chars`），纪要改**全文单次调用**（deepseek-v4-pro 1M 上下文，5h 会议无需分块）；② 修复 extractor 硬截断 `text[:max_chars]`（1h 会议只看到前 62% 导致决议/行动项偏少），改恒全量抽取；③ 删除 `LLM_MAX_CHARS`/`MMA_LLM_MAX_CHARS` 配置；④ 上传时长上限 2h→5h（`MMA_MAX_DURATION_SECONDS=18000`，同步 mission §5/§6/§7/§8-4 与 tech-stack A6/B3）。A/B 实测：生产 19218 字会议决议 1→7、行动项 2→6、未决问题 2→3，总耗时 305s→199.5s。

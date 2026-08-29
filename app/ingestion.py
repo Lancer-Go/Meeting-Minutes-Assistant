@@ -31,12 +31,12 @@ def validate_size(size_bytes: int) -> str | None:
 
 
 def validate_duration(path: Path) -> str | None:
-    """校验音视频时长是否 ≤ 2 小时（ffprobe）。"""
+    """校验音视频时长是否 ≤ 5 小时（ffprobe）。"""
     dur = audio.get_duration(path)
     if dur <= 0:
         return "无法读取音频时长（文件可能损坏或非音视频）"
     if dur > config.MAX_DURATION_SECONDS:
-        return f"会议时长 {dur / 60:.0f} 分钟，超过上限 2 小时"
+        return f"会议时长 {dur / 60:.0f} 分钟，超过上限 {config.MAX_DURATION_SECONDS / 3600:.0f} 小时"
     return None
 
 

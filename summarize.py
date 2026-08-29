@@ -1,7 +1,7 @@
 """TG-4 · 纪要生成。
 
 转写文本 → 结构化 Markdown 纪要。抽象 `LLMProvider`：
-- `deepseek` / `qwen`：OpenAI 兼容接口（需密钥），长文本走 Map-Reduce 分块。
+- `deepseek` / `qwen`：OpenAI 兼容接口（需密钥），全文单次调用。
 - `extractive`：本地抽取式基线（无需密钥、无需联网），用于离线跑通。
 
 用法:
@@ -16,19 +16,13 @@ import time
 from abc import ABC, abstractmethod
 from pathlib import Path
 
-from asr import Transcript, Segment
+from asr import Segment, Transcript
 
 SYSTEM_PROMPT = (
     "你是会议纪要助手。请根据下面的会议转写内容生成结构化会议纪要，用中文输出 Markdown，包含：\n"
     "1) 会议主题与基本信息；2) 核心结论/决议；3) 讨论要点摘要；\n"
     "4) 行动项清单（负责人、事项、优先级、截止时间，缺失则标注「待定」）；5) 待跟进/未决问题。\n"
     "忠实转写内容，不要臆造原文没有的信息。"
-)
-
-MAP_PROMPT = "请对下面的会议转写片段生成结构化要点摘要（决议 / 讨论要点 / 行动项），用中文 Markdown 列表输出："
-REDUCE_PROMPT = (
-    "以下是同一场会议多个片段的要点摘要，请合并去重，输出完整结构化会议纪要 Markdown，包含：\n"
-    "会议主题、核心决议、讨论要点、行动项清单、待跟进问题。"
 )
 
 
@@ -43,15 +37,14 @@ class LLMProvider(ABC):
 
 # ---------------------------------------------------------------- 云 LLM
 class OpenAILikeLLM(LLMProvider):
-    """OpenAI 兼容接口（DeepSeek / Qwen / OpenAI）。长文本超阈值走 Map-Reduce。"""
+    """OpenAI 兼容接口（DeepSeek / Qwen / OpenAI）。全文单次调用。"""
 
     def __init__(self, name: str, base_url: str, api_key: str, model: str,
-                 max_chars: int = 12000, temperature: float = 0.2):
+                 temperature: float = 0.2):
         self.name = name
         self.base_url = base_url
         self.api_key = api_key
         self.model = model
-        self.max_chars = max_chars
         self.temperature = temperature
         if not self.api_key:
             raise RuntimeError(f"缺少 {name.upper()}_API_KEY。请在 .env 配置后重试。")
@@ -67,26 +60,9 @@ class OpenAILikeLLM(LLMProvider):
         )
         return resp.choices[0].message.content or ""
 
-    def _chunk_text(self, text: str, size: int, overlap: int = 200) -> list[str]:
-        chunks = []
-        start = 0
-        while start < len(text):
-            chunks.append(text[start:start + size])
-            start += size - overlap
-        return chunks
-
     def summarize(self, transcript: Transcript) -> str:
         t0 = time.time()
-        text = transcript.text
-        if len(text) <= self.max_chars:
-            result = self._chat(SYSTEM_PROMPT, text)
-        else:
-            # Map-Reduce：分块总结 → 合并
-            partials = []
-            for i, chunk in enumerate(self._chunk_text(text, self.max_chars)):
-                partials.append(f"## 片段 {i + 1}\n" + self._chat(MAP_PROMPT, chunk))
-            merged = "\n\n".join(partials)
-            result = self._chat(REDUCE_PROMPT, merged)
+        result = self._chat(SYSTEM_PROMPT, transcript.text)
         self.last_elapsed = time.time() - t0
         return result
 
@@ -94,20 +70,20 @@ class OpenAILikeLLM(LLMProvider):
 class DeepSeekLLM(OpenAILikeLLM):
     name = "deepseek"
 
-    def __init__(self, api_key: str = "", model: str = "", max_chars: int = 12000):
+    def __init__(self, api_key: str = "", model: str = ""):
         import config
         super().__init__("deepseek", "https://api.deepseek.com",
                          api_key or config.DEEPSEEK_API_KEY,
-                         model or config.DEEPSEEK_MODEL, max_chars)
+                         model or config.DEEPSEEK_MODEL)
 
 
 class QwenLLM(OpenAILikeLLM):
     name = "qwen"
 
-    def __init__(self, api_key: str = "", model: str = "qwen-plus", max_chars: int = 12000):
+    def __init__(self, api_key: str = "", model: str = "qwen-plus"):
         import config
         super().__init__("qwen", "https://dashscope.aliyuncs.com/compatible-mode/v1",
-                         api_key or config.QWEN_API_KEY, model, max_chars)
+                         api_key or config.QWEN_API_KEY, model)
 
 
 # ---------------------------------------------------------------- 本地基线
@@ -130,8 +106,8 @@ class ExtractiveLLM(LLMProvider):
         lines = [
             "# 会议纪要（抽取式基线）",
             "",
-            f"> ⚠️ 本纪要由**本地抽取式算法**生成（未调用 LLM）。",
-            f"> 接入 `DEEPSEEK_API_KEY` 或 `QWEN_API_KEY` 后重跑即可升级为 LLM 纪要。",
+            "> ⚠️ 本纪要由**本地抽取式算法**生成（未调用 LLM）。",
+            "> 接入 `DEEPSEEK_API_KEY` 或 `QWEN_API_KEY` 后重跑即可升级为 LLM 纪要。",
             "",
             "## 会议基本信息",
             "",
