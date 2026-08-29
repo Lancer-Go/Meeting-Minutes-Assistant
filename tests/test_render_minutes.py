@@ -61,6 +61,17 @@ def test_standard_action_table_fields():
     assert "进行中" in md
 
 
+def test_standard_no_duplicate_sections():
+    """正文（summary_md）不含决议/行动项时，标准模板各结构化区块只渲染一次，避免重复。"""
+    m = make_minute()
+    m.summary_md = "## 会议主题与基本信息\n讨论 AI 工具选型。\n\n## 讨论要点\n- 要点一\n- 要点二"
+    md = render_minutes(m, "standard")
+    assert md.count("## 核心决议") == 1
+    assert md.count("## 行动项") == 1
+    assert md.count("## 未决问题") == 1
+    assert md.count("## 讨论要点") == 1  # 仅来自 summary_md 自身
+
+
 def test_unknown_template_raises():
     with pytest.raises(ValueError):
         render_minutes(make_minute(), "nope")

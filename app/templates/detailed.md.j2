@@ -11,13 +11,12 @@
 {% for s in minute.speakers %}| {{ s.name }} | {{ s.role }} |
 {% endfor %}{% else %}- （无）
 {% endif %}
+{{ minute.summary_md or '（无）' }}
+
 ## 核心决议
 {% if minute.decisions %}{% for d in minute.decisions %}- **{{ d.conclusion }}**{% if d.basis %}（依据：{{ d.basis }}）{% endif %}
 {% endfor %}{% else %}- （无）
 {% endif %}
-## 讨论要点
-{{ minute.summary_md or '（无）' }}
-
 ## 行动项
 {% if minute.actions %}| 事项 | 负责人 | 截止时间 | 优先级 | 状态 |
 | --- | --- | --- | --- | --- |
