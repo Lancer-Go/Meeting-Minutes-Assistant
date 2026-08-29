@@ -76,12 +76,14 @@
 - 用真实会议（80min）完成三家 ASR 对比与 DeepSeek 端到端纪要，锁定选型（ASR 腾讯云 16k_zh / LLM DeepSeek-chat），回填《选型决策记录》（b3499f0）
 
 ### 修复
+- 纪要正文与结构化抽取去重：summary 的 `SYSTEM_PROMPT` 改为只产出「会议主题 + 讨论要点」（不再产出决议/行动项/待跟进），决议/行动项/未决问题统一由 extractor 结构化输出；`standard`/`detailed` 模板去掉「讨论要点」包裹标题、直接渲染正文，消除同一纪要中决议/行动项重复出现的问题；补 `test_standard_no_duplicate_sections` 单测（75f35c3）
 - 修复纪要质量低（去 Map-Reduce + 修 extractor 截断）：① 删除 Map-Reduce 分块（`app/summary.py`、根 `summarize.py` 的 `_chunk_text` / `MAP_PROMPT` / `REDUCE_PROMPT` / `max_chars`），纪要改**全文单次调用**（deepseek-v4-pro 1M 上下文，5h 会议无需分块）；② 修复 extractor 硬截断 `text[:max_chars]`（1h 会议只看到前 62%，决议/行动项偏少），改恒全量抽取；③ 删除 `LLM_MAX_CHARS` / `MMA_LLM_MAX_CHARS` 配置；补 `test_summarize_single_shot_long` 单测。A/B 实测生产 19218 字会议：决议 1→7、行动项 2→6、未决问题 2→3，总耗时 305s→199.5s（134cbe9）
 - docker-compose.yml 的 `S3_ENDPOINT` 由硬编码 `http://minio:9000` 改为 `${S3_ENDPOINT:-http://minio:9000}`，修复 `.env` 里配置的 COS endpoint 被 compose `environment` 块（优先级高于 `env_file`）覆盖、导致生产 ASR URL 识别模式无法启用的问题（9e1d997）
 - 修复 M2 角色识别/话者分离三处缺陷：①腾讯云 `SpeakerDiarization` 返回的 `SpeakerId` 为 int，`0` 是合法说话人（主讲/主持人），原 `str(getattr(r,"SpeakerId","") or "")` 用 `or ""` 兜底把 0 误判为空丢弃，导致话者分离覆盖率仅 ~5%（1668/1756 段空 speaker）；新增 `_speaker_to_str` 保留 0。②`app/role.py` 把空 speaker 段归为假「S1」并因段数最多被判成主持人，改为未标注段不参与统计（全部无标注才回退单说话人占位）。③`standard`/`brief` 模板不渲染「说话人/角色」节，角色识别结果在默认纪要中不可见，两模板补齐该节；`pipeline` 话者分离判定改用 `speaker_coverage`（==0 才走 diarization 兜底）并在 metrics 记录覆盖率（0c34044）
 - `storage` 的 S3 上传由强制 SSE-AES256 改为 `S3_SSE_ENABLED` 可配置（代码默认开，本地 MinIO 无 KES 时 compose 默认关），修复上传报 "KMS is not configured" 导致任务 500 的问题（0d655f8）
 
 ### 文档
+- tech-stack B3 ⑤ 回填去重后的分工（正文只出「会议主题 + 讨论要点」，决议/行动项/待跟进走 extractor Function-Calling）（75f35c3）
 - mission 更新至 v0.4（§5 会议时长 ≤5h、§6 KPI 补 5h 成本说明、§7「长会议超上下文」风险改单次调用、§8-4 决策 2h→5h）；tech-stack 更新至 v0.12（A6 成本改单次全量读入、B3 纪要单次调用全文、时长 ≤5h）；roadmap 补 2026-08-29 变更记录；新增 `specs/2026-08-29 - fix-summary-single-shot/` 三件套（134cbe9）
 - deploy/README.md 回填真实云服务器上线记录（2026-08-27 腾讯云 2C2G 广州裁剪版：api/worker/redis/postgres + 腾讯云 COS，4G swap + worker 并发=1，升级 4C8G 恢复全套），并补 COS 对象存储 `.env` 配置说明（9e1d997）
 - tech-stack 更新至 v0.10：回填 M4 选型（模型注册表热切换 / deepseek-v4-flash 降本通道 / Qwen 抽取 / pgvector / 云 embedding / RAG 降级），A2 新增「文本向量化与检索问答」、A5 补 M4 选型确认、B2 模块职责补 llm_registry/embedding/rag、B4 数据模型补 MinuteEmbedding 与 `POST /api/qa`、`regen`、B5 覆盖率 82%；roadmap 补 M4 范围收窄（聚焦两项，G6/G7 留后期）与「当前进度」/变更记录（1e4bbe4）
