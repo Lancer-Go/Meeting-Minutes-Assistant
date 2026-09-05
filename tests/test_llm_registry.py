@@ -29,9 +29,21 @@ def test_model_spec_available():
     assert ModelSpec("a", "deepseek", "http://x", "m", "").available() is False
 
 
-def test_active_summary_alias_default():
+def test_active_summary_alias_default(monkeypatch):
+    """未配置 MMA_LLM_ALIAS 时按 provider 取默认别名（显式清空，避免受 .env 实际值影响）。"""
+    from app import config
+    monkeypatch.setattr(config, "MMA_LLM_ALIAS", "")
     assert registry.active_summary_alias("deepseek") == "v4-pro"
     assert registry.active_summary_alias("extractive") == "extractive"
+
+
+def test_active_summary_alias_qwen38max(monkeypatch):
+    """qwen3.8-max 别名注册后可热切换（2026-09-05 起为线上主模型）。"""
+    from app import config
+    monkeypatch.setattr(config, "MMA_LLM_ALIAS", "qwen3.8-max")
+    assert registry.active_summary_alias("deepseek") == "qwen3.8-max"
+    assert registry.active_extractor_alias("deepseek") == "qwen3.8-max"
+    assert registry.resolve("qwen3.8-max").model == "qwen3.8-max"
 
 
 def test_active_summary_alias_hot_switch(monkeypatch):
@@ -42,7 +54,9 @@ def test_active_summary_alias_hot_switch(monkeypatch):
     assert registry.active_summary_alias("deepseek") == "qwen-plus"
 
 
-def test_active_extractor_alias():
+def test_active_extractor_alias(monkeypatch):
+    from app import config
+    monkeypatch.setattr(config, "MMA_LLM_ALIAS", "")
     assert registry.active_extractor_alias("rule") == "rule"
     assert registry.active_extractor_alias("deepseek") == "v4-pro"
 

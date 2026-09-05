@@ -15,14 +15,22 @@ DEEPSEEK_PRICE_PER_1K: dict[str, dict[str, float]] = {
 }
 _DEFAULT_PRICE = DEEPSEEK_PRICE_PER_1K["deepseek-v4-pro"]
 
+# Qwen 价格（元 / 千 token）：qwen3.8-max 按阿里云百炼牌价 ÷1000（输入 12 / 输出 36 / 缓存命中 1.5，元/百万 tokens）；
+# 2026-09-05 起为线上主模型（MMA_LLM_ALIAS=qwen3.8-max）。其他 qwen 型号牌价未核实前不在此登记（将回落默认价）。
+QWEN_PRICE_PER_1K: dict[str, dict[str, float]] = {
+    "qwen3.8-max": {"in": 0.012, "out": 0.036, "cache": 0.0015},
+}
+
+_ALL_LLM_PRICE_PER_1K: dict[str, dict[str, float]] = {**DEEPSEEK_PRICE_PER_1K, **QWEN_PRICE_PER_1K}
+
 # ASR 价格（元 / 分钟）：腾讯云 16k_zh ~¥1.75/h
 ASR_PRICE_PER_MIN = 1.75 / 60
 
 
 def llm_cost_rmb(model: str, tokens_in: int, tokens_out: int,
                  tokens_cache: int = 0) -> float:
-    """按 token 用量计算 LLM 成本（元）。"""
-    p = DEEPSEEK_PRICE_PER_1K.get(model, _DEFAULT_PRICE)
+    """按 token 用量计算 LLM 成本（元）。按具体模型名单价查表（DeepSeek / Qwen），未知模型回落 DeepSeek 默认价。"""
+    p = _ALL_LLM_PRICE_PER_1K.get(model, _DEFAULT_PRICE)
     return round(tokens_in * p["in"] / 1000.0
                  + tokens_out * p["out"] / 1000.0
                  + tokens_cache * p["cache"] / 1000.0, 6)

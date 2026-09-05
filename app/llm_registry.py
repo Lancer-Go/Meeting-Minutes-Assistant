@@ -36,6 +36,8 @@ _DEFAULT_ALIASES: dict[str, dict] = {
     "v4-pro": {"provider": "deepseek", "model": "deepseek-v4-pro"},
     "v4-flash": {"provider": "deepseek", "model": "deepseek-v4-flash"},
     "qwen-plus": {"provider": "qwen", "model": "qwen-plus"},
+    "qwen3.8-max": {"provider": "qwen", "model": "qwen3.8-max"},
+    "qwen3.8-flash": {"provider": "qwen", "model": "qwen3.8-flash"},
     "gpt-4o": {"provider": "openai", "model": "gpt-4o"},
     "glm-4-plus": {"provider": "zhipu", "model": "glm-4-plus"},
     "moonshot-v1-8k": {"provider": "moonshot", "model": "moonshot-v1-8k"},

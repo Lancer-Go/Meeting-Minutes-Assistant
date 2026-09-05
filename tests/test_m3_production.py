@@ -117,6 +117,20 @@ def test_llm_cost_rmb_model():
     assert c == round(1000 * 0.0045 / 1000 + 1000 * 0.0135 / 1000, 6)
 
 
+def test_llm_cost_rmb_qwen_model():
+    """qwen3.8-max 按百炼牌价计（输入 12 / 输出 36 / 缓存 1.5 元每百万 tokens）。"""
+    c = cost.llm_cost_rmb("qwen3.8-max", 1000, 1000, 0)
+    assert c == round(1000 * 0.012 / 1000 + 1000 * 0.036 / 1000, 6)
+    c_cache = cost.llm_cost_rmb("qwen3.8-max", 0, 0, 1000)
+    assert c_cache == 0.0015
+
+
+def test_llm_cost_rmb_unknown_model_falls_back():
+    """未知模型名回落 DeepSeek V4 Pro 默认价（不抛错）。"""
+    c = cost.llm_cost_rmb("some-future-model", 1000, 0, 0)
+    assert c == 0.0045
+
+
 def test_asr_cost_rmb():
     assert cost.asr_cost_rmb(60) == round(60 * 1.75 / 60, 6)
 

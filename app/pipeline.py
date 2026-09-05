@@ -38,8 +38,8 @@ ASR_PRICE_RMB_PER_MIN = {
     "iflytek": 2.0 / 60,   # 讯飞 ~¥2.0/h → 每分钟
 }
 LLM_PRICE_RMB_PER_1K_TOKENS = {
-    "deepseek": 0.002,     # deepseek-v4-pro 输入 ~¥2/百万 token（估）
-    "qwen": 0.002,         # qwen-plus 估
+    "deepseek": 0.0045,  # deepseek-v4-pro 输入空闲价 ~¥4.5/百万 token（tech-stack A6），按 1 字≈1 token 估算
+    "qwen": 0.012,       # qwen3.8-max 输入 ¥12/百万 token（2026-08 百炼牌价；2026-09-05 起为主模型）
     "extractive": 0.0,
 }
 
