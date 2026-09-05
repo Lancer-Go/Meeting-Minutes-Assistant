@@ -22,6 +22,12 @@
 - 变更说明（提交哈希前 7 位）
 -->
 
+### 变更
+- 线上主模型切换 DeepSeek-V4 Pro → **Qwen3.8-Max**（`MMA_LLM_ALIAS=qwen3.8-max`，summary + extractor 同步生效）：`app/llm_registry.py` 注册表新增 `qwen3.8-max` / `qwen3.8-flash` 别名（DashScope OpenAI 兼容端点，`DASHSCOPE_API_KEY`）；四模型纪要质量实测（DeepSeek V4-Pro / Qwen3.8-Max / 豆包 2.1 Turbo / 豆包 Seed 2.1，61.7min 真实转写）Qwen3.8-Max 覆盖完整度与事实可信度最优（零编造、不脑补 ASR 乱码），Function-Calling 抽取已验证（18 决议/8 行动/8 问题）（f629149）
+- 成本表按模型细分：`app/cost.py` 新增 `QWEN_PRICE_PER_1K`（qwen3.8-max 输入 12 / 输出 36 / 缓存命中 1.5 元每百万 tokens，百炼牌价），`llm_cost_rmb` 改按具体模型名查表（DeepSeek + Qwen 合并表），未知模型回落 DeepSeek V4 Pro 默认价；`app/pipeline.py` `estimate_cost` 估算口径同步（qwen 0.012 / deepseek 0.0045 元每千 token 输入）——修复 qwen 仍按 qwen-plus 时代 0.002 估价导致成本低估约 10 倍的问题（f629149）
+- `docs/tech-stack.md` 同步主模型切换：A2 选型表（Qwen3.8-Max 已锁定主模型，DeepSeek-V4 Pro 转高性价比备选）、A6 成本模型（新增 qwen3.8-max 牌价行 + 2026-09-05 实测单场成本对照：qwen3.8-max ≈¥0.77/场 vs deepseek-v4-pro ≈¥0.16/场，LLM 侧；降本建议按场景热切换）（f629149）
+- 注册表测试健壮性修复：`test_active_summary_alias_default` / `test_active_extractor_alias` 显式 monkeypatch 清空 `MMA_LLM_ALIAS`（原测试隐式依赖 `.env` 实际值，主模型切换后误报）；新增 `test_active_summary_alias_qwen38max`（qwen3.8-max 热切换链路）与 `test_llm_cost_rmb_qwen_model` / `test_llm_cost_rmb_unknown_model_falls_back`（qwen 牌价计费 + 回落默认价）（f629149）
+
 ### 新增
 - 新增上传进度实时反馈需求变更任务准备（plan / requirements / validation 三文档）：上传阶段实时进度「已上传 xx% + 速度(MB/s) + 剩余时间」，XHR `upload.onprogress` 前端单点改造、后端零改动，补齐 M1 极简前端无上传进度反馈的短板（b064bb8）
 - 实现上传进度实时反馈：`static/auth.js` 新增 `uploadFile`（XHR 上传 + `upload.onprogress` 字节进度 + Bearer 鉴权 / 401 登出 / onerror / onabort）；`static/index.html` `upload()` 改走 XHR，进度回调 100ms 节流展示「已上传 xx%（速度，剩余时间）」，上传完成衔接「排队处理中」，失败 / 中断明确提示；纯前端改造、后端零改动（2db9cb1）
